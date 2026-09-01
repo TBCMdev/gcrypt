@@ -26,7 +26,7 @@ namespace gcrypt::hashing
     template<std::size_t _Size>
     dhash SHA(const std::array<unsigned char, _Size> data);
 
-    /// @brief hash_i for implementation of the XedDSA/VXEdDSA algorithms,, with b = 255.
+    /// @brief hash_i for implementation of the XedDSA/VXEdDSA algorithms, with b = 255.
     template<std::size_t _Size, int _I>
     dhash hash255_i(unsigned char i, const std::array<unsigned char, _Size> message);
 }

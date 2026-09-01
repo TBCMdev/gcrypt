@@ -41,43 +41,25 @@ file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
 )
 
-# Entry point wrapper for Android JNI interface
-set(JNI_ENTRY_POINT "${CMAKE_CURRENT_SOURCE_DIR}/jnib.cpp")
 
 # --- Platform-Specific System Libraries ---
 set(PLATFORM_LIBS "")
 
-if(ANDROID)
-    find_library(LOG_LIB log)
-    if(LOG_LIB)
-        list(APPEND PLATFORM_LIBS ${LOG_LIB})
-    endif()
-else()
-    find_package(Threads REQUIRED)
-    list(APPEND PLATFORM_LIBS Threads::Threads ${CMAKE_DL_LIBS})
+find_package(Threads REQUIRED)
+list(APPEND PLATFORM_LIBS Threads::Threads ${CMAKE_DL_LIBS})
 
-    if(WIN32)
-        list(APPEND PLATFORM_LIBS ws2_32 crypt32 advapi32 user32)
-    endif()
+if(WIN32)
+    list(APPEND PLATFORM_LIBS ws2_32 crypt32 advapi32 user32)
 endif()
 
 # --- OpenSSL Setup ---
-if(ANDROID_ABI)
-    set(OPENSSL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/openssl/${ANDROID_ABI}")
-    set(OPENSSL_USE_STATIC_LIBS TRUE)
-elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/openssl")
-    set(OPENSSL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/openssl")
-    set(OPENSSL_USE_STATIC_LIBS TRUE)
-endif()
+set(OPENSSL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/openssl")
+set(OPENSSL_USE_STATIC_LIBS TRUE)
 
 find_package(OpenSSL REQUIRED)
 
 # --- Libsodium Setup ---
-if(ANDROID_ABI)
-    set(SODIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/libsodium/${ANDROID_ABI}")
-else()
-    set(SODIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/libsodium")
-endif()
+set(SODIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/libsodium")
 
 if(EXISTS "${SODIUM_DIR}/include")
     add_library(libsodium STATIC IMPORTED)
@@ -110,16 +92,9 @@ else()
 endif()
 
 # --- Target Definition ---
-if(ANDROID)
-    add_library(gcrypt SHARED
-        ${JNI_ENTRY_POINT}
-        ${CORE_SOURCES}
-    )
-else()
-    add_library(gcrypt STATIC
-        ${CORE_SOURCES}
-    )
-endif()
+add_library(gcrypt STATIC
+    ${CORE_SOURCES}
+)
 
 # --- Include Directories ---
 target_include_directories(gcrypt PRIVATE 
@@ -130,13 +105,12 @@ target_include_directories(gcrypt PRIVATE
 )
 
 # Desktop Fallback JNI Headers
-if(NOT ANDROID)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/android/include")
-        target_include_directories(gcrypt PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/android/include"
-        )
-    endif()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/android/include")
+    target_include_directories(gcrypt PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/android/include"
+    )
 endif()
+
 
 # --- Target Linking ---
 target_link_libraries(gcrypt PRIVATE 
