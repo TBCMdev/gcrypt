@@ -5,17 +5,17 @@
 namespace gcrypt::util
 {
     template<std::size_t _Size>
-    key<_Size> kcpy(const key<_Size>& key)
+    key<_Size> kcpy(const key<_Size>& k)
     {
         key<_Size> out{};
-        std::memcpy(out.data(), key.data(), _Size);
+        std::memcpy(out.data(), k.data(), _Size);
         return out;
     }
     template<std::size_t _Take, std::size_t _Size>
-    key<_Take> kcpy(const key<_Size>& key, std::size_t offset)
+    key<_Take> kcpy(const key<_Size>& k, std::size_t offset)
     {
         key<_Take> out{};
-        std::memcpy(out.data(), key.data() + offset, _Take);
+        std::memcpy(out.data(), k.data() + offset, _Take);
         return out;
     }
 
