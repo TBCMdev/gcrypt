@@ -7,8 +7,17 @@
 */
 
 #define GCRYPT_JAVA Java_
-#define GCRYPT_PACKAGE_NAME io_github_gckoltys_gecko_gcrypt_
-#define GCRYPT_JNI_FUNC_SIG(ret, cpp_structure_equivalent) JNIEXPORT ret JNICALL
+
+#ifndef GCRYPT_PACKAGE_NAME
+    #define GCRYPT_PACKAGE_NAME com_example_name_gcrypt_
+#endif
+// Package path prefix required by FindClass (using slashes)
+#ifndef GCRYPT_PKG_PATH
+    #define GCRYPT_PKG_PATH "com/example/name/gcrypt"
+#endif
+
+
+#define GCRYPT_JNI_FUNC_SIG(ret, cpp_structure_equivalent) extern "C" JNIEXPORT ret JNICALL
 
 #define GCRYPT_LIB_JNI_FUNC(name) GCRYPT_JAVA##GCRYPT_PACKAGE_NAME ##_name
 
@@ -25,20 +34,19 @@
 // Jni Object parameter
 #define JNI_POBJ(x) "L" x ";"
 
-// Package path prefix required by FindClass (using slashes)
-#define GCRYPT_PKG_PATH "io/github/gckoltys/gecko/gcrypt/"
+
 
 #pragma region JNI_InbuildMappings
     #define JNI_CONSTRUCTOR_NAME "<init>"
-    #define JAVA_UTIL_PACKAGE    "java/util/"
+    #define JAVA_LANG_PACKAGE    "java/lang/"
 
     #define JAVA_OBJECT_NAME     "Object"
-    #define JAVA_OBJECT_PATH     JAVA_UTIL_PACKAGE JAVA_OBJECT_NAME
-    #define JAVA_MAP_PATH        JAVA_UTIL_PACKAGE "Map"
+    #define JAVA_OBJECT_PATH     JAVA_LANG_PACKAGE JAVA_OBJECT_NAME
+    #define JAVA_MAP_PATH        JAVA_LANG_PACKAGE "Map"
 #pragma endregion
 
 #pragma region JNI_StructureMappings
-    #define JNI_INBUILT_hashmap_CLASSNAME_MAPPING       JAVA_UTIL_PACKAGE "HashMap"
+    #define JNI_INBUILT_hashmap_CLASSNAME_MAPPING       JAVA_LANG_PACKAGE "HashMap"
     #define JNI_local_key_bundle_CLASSNAME_MAPPING      GCRYPT_PKG_PATH "GcryptLocalKeyBundle"
     #define JNI_key_pair_CLASSNAME_MAPPING              GCRYPT_PKG_PATH "GcryptKeyPair"
     #define JNI_id_key_CLASSNAME_MAPPING                GCRYPT_PKG_PATH "GcryptIdKey"

@@ -8,27 +8,6 @@
 
 namespace gcrypt::keygen
 {
-
-    template<std::size_t _Size, std::convertible_to<uint8_t>... _Bytes>
-    key<_Size> from_lebytes(_Bytes... bytes)
-    {
-        key<_Size> out{};
-
-        std::size_t offset = 0;
-
-        ((out[offset++] = static_cast<uint8_t>(bytes)), ...);
-
-        return out;
-    }
-    template<std::size_t _Size>
-    key<_Size> random()
-    {
-        key<_Size> out{};
-        if (RAND_bytes(out.data(), _Size) != 1)
-            throw std::runtime_error("OpenSSL RAND_bytes failed");
-        return out;
-    }
-    
     refill_payload refill(const xckey& privIdentityKey, uint32_t Count)
     {
         refill_payload payload{};
@@ -71,7 +50,6 @@ namespace gcrypt::keygen
         return payload;
     }
 
-
     namespace _impl::openssl
     {
         EVP_PKEY* _invoke_alg(KeyGenAlgorithm _alg)
@@ -87,73 +65,8 @@ namespace gcrypt::keygen
             }
         }
 
-        template
-            <
-             std::size_t _Bytes,
-             template<std::size_t> typename _PublicKeyType,
-             template<std::size_t> typename _PrivateKeyType
-            >
-        std::expected<keypair<_Bytes, _PublicKeyType, _PrivateKeyType>, KeyGenError> make_pair(KeyGenAlgorithm _alg)
-        {
-            EVP_PKEY* pkey = _invoke_alg(_alg);
-            
-            if (!pkey)
-                return std::unexpected(KeyGenError::LIBRARY_ERROR);
-
-            keypair<_Bytes, _PublicKeyType, _PrivateKeyType> kp{};
         
-            size_t klenpub  = _Bytes;
-            size_t klenpriv = _Bytes;
-
-            if (EVP_PKEY_get_raw_public_key(pkey, kp.Public.data(), &klenpub) != 1 || klenpub != _Bytes)
-            {
-                EVP_PKEY_free(pkey);
-                return std::unexpected(KeyGenError::LIBRARY_ERROR);
-            }
-
-            if (EVP_PKEY_get_raw_private_key(pkey, kp.Private.data(), &klenpriv) != 1 || klenpriv != _Bytes)
-            {
-                EVP_PKEY_free(pkey);
-                return std::unexpected(KeyGenError::LIBRARY_ERROR);
-            }
-
-            EVP_PKEY_free(pkey);
-            return kp;
-        }
-        template
-            <
-             std::size_t _Bytes,
-             template<std::size_t> typename _PrivateKeyType
-            >
-        std::expected<keypair<_Bytes, idkey, _PrivateKeyType>, KeyGenError> make_id_pair(KeyGenAlgorithm _alg)
-        {
-            EVP_PKEY* pkey = _invoke_alg(_alg);
-            
-            if (!pkey)
-                return std::unexpected(KeyGenError::LIBRARY_ERROR);
-
-            keypair<_Bytes, idkey, _PrivateKeyType> kp{};
         
-            size_t klenpub  = _Bytes;
-            size_t klenpriv = _Bytes;
-
-            if (EVP_PKEY_get_raw_public_key(pkey, kp.Public.key.data(), &klenpub) != 1 || klenpub != _Bytes)
-            {
-                EVP_PKEY_free(pkey);
-                return std::unexpected(KeyGenError::LIBRARY_ERROR);
-            }
-
-            if (EVP_PKEY_get_raw_private_key(pkey, kp.Private.data(), &klenpriv) != 1 || klenpriv != _Bytes)
-            {
-                EVP_PKEY_free(pkey);
-                return std::unexpected(KeyGenError::LIBRARY_ERROR);
-            }
-
-            kp.Public.identifier = util::keyid(kp.Public.key);
-
-            EVP_PKEY_free(pkey);
-            return kp;
-        }
     }
 
     std::expected

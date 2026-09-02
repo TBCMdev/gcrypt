@@ -42,7 +42,30 @@ namespace gcrypt
         /// @param Z Random bytes
         /// @return The signature
         template<std::size_t _MessageSize>
-        key<64> sign32(xckey K, const std::array<uint8_t, _MessageSize>& M, key<64> Z);
+        key<64> sign32(xckey K, const std::array<uint8_t, _MessageSize>& M, key<64> Z)
+        {
+            const xckeypair A = impl::calculate_key_pair(K);
+            xckeypair R{};
+
+            // hash_1(a || M || Z)
+            hashing::dhash hash_1 = hashing::hash255_i(1, util::kconcat(A.Private, M, Z));
+
+            // r = hash_1(...) (mod q)
+            crypto_core_ed25519_scalar_reduce(R.Private.data(), hash_1.Digest.data());
+        
+            R.Public = impl::bpscale(R.Private);
+
+            hashing::dhash hash = hashing::SHA(util::kconcat(R.Public, A.Public, M));
+
+            xckey s{}, ha{}, h{};
+
+            crypto_core_ed25519_scalar_reduce(h.data(), hash.Digest.data());
+            {   // s = r + ha (mod q)
+                crypto_core_ed25519_scalar_mul(ha.data(), h.data(), A.Private.data());
+                crypto_core_ed25519_scalar_add(s.data(), R.Private.data(), ha.data());
+            }
+            return util::kconcat(R.Public, s);
+        }
 
         /// @brief TODO
         /// @tparam _MessageSize 
@@ -51,7 +74,37 @@ namespace gcrypt
         /// @param rcs 
         /// @return 
         template<std::size_t _MessageSize>
-        bool verify32(xckey mkPub, const std::array<uint8_t, _MessageSize>& M, key<64> rcs);
+        bool verify32(xckey mkPub, const std::array<uint8_t, _MessageSize>& M, key<64> rcs)
+        {
+            // lower half of r concat s
+            xckey R = util::kcpy<GCRYPT_X25519_KEY_SIZE, 64>(rcs);
+            // upper half of r concat s
+            xckey s = util::kcpy<GCRYPT_X25519_KEY_SIZE, 64>(rcs, GCRYPT_X25519_KEY_SIZE);
+
+            if (!impl::sig_in_bounds(mkPub, R, s))
+                return false;
+
+            xckey A = impl::convert_mont(mkPub);
+            
+            if (crypto_core_ed25519_is_valid_point(A.data()) == 0)
+                return false;
+
+            xckey h{};
+            hashing::dhash hash = hashing::SHA(util::kconcat(R, A, M));
+            crypto_core_ed25519_scalar_reduce(h.data(), hash.Digest.data());
+        
+            // r_check = sB - hA
+            //         = s - h (memory wise)
+            impl::bpscale(s); // s = sB
+
+            crypto_core_ed25519_scalar_mul(h.data(), h.data(), A.data()); // h = hA
+
+            xckey r_check{};
+            crypto_core_ed25519_scalar_sub(r_check.data(), s.data(), h.data());
+
+            // ensure bytes equal (R == R_check)
+            return std::equal(r_check.begin(), r_check.end(), R.begin(), R.end());
+        }
     }
     namespace HKDF
     {
@@ -59,7 +112,15 @@ namespace gcrypt
         /// @param ikm the input key material
         /// @return a key of size _Size.
         template<std::size_t _Size>
-        key<_Size> extract(const key<_Size>& salt, const key<_Size>& ikm);
+        key<_Size> extract(const key<_Size>& salt, const key<_Size>& ikm)
+        {
+            key<_Size> out{};
+
+            if (crypto_kdf_hkdf_sha256_extract(out.data(), salt.data(), _Size, ikm.data(), _Size) == 0)
+                throw std::runtime_error("HKDF_sha256_extract failed.");
+
+            return out;
+        }
     }
     namespace MLKEM_32
     {
@@ -79,7 +140,7 @@ namespace gcrypt
         /// @brief Generates a shared secret key<MLKEM_BYTES> from a given kem keypair.
         /// @param bundle 
         /// @return 
-        key<MLKEM_BYTES> decapsulate(const kem_keypair& keys);
+        key<MLKEM_BYTES> decapsulate(const key<MLKEM_CTB>& cipherText, const qprivkey& privateKey);
     }
 
     /// @brief The aead algorithm used in the protocol.
