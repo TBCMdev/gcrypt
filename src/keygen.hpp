@@ -38,6 +38,12 @@ namespace gcrypt::keygen
     template<std::size_t _Size>
     key<_Size> random();
     
+    /// @brief Generates keyCount keypair refills to use to replenish one time prekeys.
+    /// @param privIdentityKey The private identity key of the user
+    /// @param Count the amount of keys to generate
+    /// @return The list of generated keys, both for private and public use.
+    refill_payload refill(const xckey& privIdentityKey, uint32_t Count);
+
     namespace _impl::openssl
     {
         enum class KeyGenAlgorithm
@@ -45,6 +51,10 @@ namespace gcrypt::keygen
             X25519,
             Ed25519
         };
+        /// @brief Invokes the given algorithm. Note: Remember to call ENV_FREE on the associated object.
+        /// @return The generated key object
+        EVP_PKEY* _invoke_alg(KeyGenAlgorithm _alg);
+
         /// @brief Calls the openssl implementation for generating a cryptographically secure key.
         /// @tparam _Bytes The byte size of the keypair's keys
         /// @tparam _PublicKeyType the type of the public key
@@ -54,26 +64,40 @@ namespace gcrypt::keygen
         template
             <
              std::size_t _Bytes,
-             template<std::size_t> class _PublicKeyType = key,
-             template<std::size_t> class _PrivateKeyType = _PublicKeyType
+             template<std::size_t> typename _PublicKeyType = key,
+             template<std::size_t> typename _PrivateKeyType = _PublicKeyType
             >
         std::expected<keypair<_Bytes, _PublicKeyType, _PrivateKeyType>, KeyGenError> make_pair(KeyGenAlgorithm _alg);
+    
+        /// @brief Calls the openssl implementation for generating a cryptographically secure key with a uint identifier for both keys, contained in the public key structure.
+        /// @tparam _Bytes The byte size of the keypair's keys
+        /// @tparam _PublicKeyType the type of the public key
+        /// @tparam _PrivateKeyType the type of the privat key
+        /// @param _alg The algorithm to use
+        /// @return 
+        template
+            <
+             std::size_t _Bytes,
+             template<std::size_t> typename _PrivateKeyType = key
+            >
+        std::expected<keypair<_Bytes, idkey, _PrivateKeyType>, KeyGenError> make_id_pair(KeyGenAlgorithm _alg);
+    
     }
 
     namespace X25519
     {
-        std::expected<
-            xckeypair,
-            KeyGenError
-                     > make_pair();
+        std::expected<xckeypair,KeyGenError> make_pair();
+        std::expected<xcikeypair,KeyGenError> make_id_pair();
     }
     namespace Ed25519
     {
         std::expected<edkeypair,KeyGenError> make_pair();
+        std::expected<edikeypair,KeyGenError> make_id_pair();
     }
     namespace MLKEM_32
     {
         std::expected<qkeypair, KeyGenError> make_pair();
+        std::expected<qikeypair, KeyGenError> make_id_pair();
     }
     
 }

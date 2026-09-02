@@ -34,4 +34,13 @@ namespace gcrypt::util
     template<std::size_t... _Sizes>
     key<types::sum_size_t<_Sizes...>::value> kconcat(const key<_Sizes>&... keys);
 
+
+    /// @brief Returns the id (hash) of a key. Can be used in place of a generic counter for
+    /// @brief assigning identifiers to keys. 
+    /// @tparam _Sizes 
+    /// @param k 
+    /// @return 
+    template<std::size_t _Size>
+    uint32_t keyid(const key<_Size>& k);
+
 }

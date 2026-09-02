@@ -4,6 +4,7 @@
 #include <array>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 
 #define GCRYPT_VERSION_STRING "0.0.1"
 #define GCRYPT_X25519_KEY_SIZE 32
@@ -70,8 +71,8 @@ namespace gcrypt
     /// @tparam _PublicKeyType the public key's type
     /// @tparam _PrivateKeyType the private key's type
     template<std::size_t _Bytes,
-             template<std::size_t> class _PublicKeyType = key,
-             template<std::size_t> class _PrivateKeyType = _PublicKeyType
+             template<std::size_t> typename _PublicKeyType = key,
+             template<std::size_t> typename _PrivateKeyType = _PublicKeyType
             >
     using keypair = _keypair_impl<_PublicKeyType, _PrivateKeyType, _Bytes, _Bytes>;
 
@@ -83,8 +84,8 @@ namespace gcrypt
     /// @tparam _PrivateKeyType the private key's type
     template<std::size_t _BytesPublic,
              std::size_t _BytesPrivate,
-             template<std::size_t> class _PublicKeyType = key,
-             template<std::size_t> class _PrivateKeyType = _PublicKeyType
+             template<std::size_t> typename _PublicKeyType = key,
+             template<std::size_t> typename _PrivateKeyType = _PublicKeyType
             >
     using ukeypair = _keypair_impl<_PublicKeyType, _PrivateKeyType, _BytesPublic, _BytesPrivate>;
 
@@ -92,22 +93,42 @@ namespace gcrypt
 
     /// @brief curve (X25519 alg) key
     using xckey        = key<GCRYPT_X25519_KEY_SIZE>;
+    using xcikey       = idkey<GCRYPT_X25519_KEY_SIZE>;
+    using xcsikey      = sidkey<GCRYPT_X25519_KEY_SIZE>;
     using xckeypair    = keypair<GCRYPT_X25519_KEY_SIZE>;
+    /// @brief An identifiable xcurve key. Note that the public key contains the indentifier, yet can be used to identify the private key as well.
+    using xcikeypair   = keypair<GCRYPT_X25519_KEY_SIZE, idkey, key>;
     
     /// @brief curve (Ed25519 alg) key.
     using edkeypair    = xckeypair;
+    using edikeypair   = xcikeypair;
     
-    /// @brief curve key with identifier
-    using xcidkey      = idkey<GCRYPT_X25519_KEY_SIZE>;
     /// @brief Ed25519 curve key with signature and identifier
     using edsidkey     = sidkey<GCRYPT_X25519_KEY_SIZE, GCRYPT_SIGNATURE_SIZE>;
 
     /// @brief quantum key
     using qpubkey      = key<MLKEM_PKB>;
+    using qpubikey     = idkey<MLKEM_PKB>;
     using qprivkey     = key<MLKEM_SKB>;
+    using qprivikey    = idkey<MLKEM_PKB>;
+
+    using qpubsidkey   = sidkey<MLKEM_PKB>;
+    using qprivsidkey  = sidkey<MLKEM_PKB>;
+
     using qkeypair     = ukeypair<MLKEM_PKB, MLKEM_SKB>;
+    using qikeypair    = ukeypair<MLKEM_PKB, MLKEM_SKB, idkey, key>;
     /// @brief quantum key with signature and identifier
     using qsidkey      = sidkey<MLKEM_CTB, GCRYPT_SIGNATURE_SIZE>;
+
+    /// @brief Represents a generated pair of curve and quantum keys.
+    ///        The maps are to be private, and merged with local key storage,
+    ///        and the arrays are used for public external (server-side) use if required.
+    struct refill_payload
+    {
+        std::vector<xcikey>  oneTimePreKeys;
+        std::vector<qsidkey> signedOneTimeQuantumPreKeys;
+    };
+
 
     /// @brief A payload sent to the server to register a devices keys. Note that all keys below are PUBLIC.
     /// @tparam _OneTimePreKeyCount the amount of one time pre keys you want to give to the server.
@@ -117,12 +138,13 @@ namespace gcrypt
         #define GCRYPT_MAX_REGISTRATION_VALUE 16380
         uint32_t                  registration,
                                   deviceId;
-        const xckey&   identityKey;
-        const xckey&   signedPreKey;
-        const qpubkey& quantumPreKey;
-        std::array<const xckey&, _OneTimePreKeyCount>
+        xckey      identityKey; // x curve key
+        xcsikey    signedPreKey; // x curve sig+id key
+        qpubsidkey quantumPreKey; // quantum public sig+id key
+
+        std::array<xcikey, _OneTimePreKeyCount>
                                   oneTimePreKeys;
-        std::array<const qsidkey&, _OneTimePreKeyCount>
+        std::array<qsidkey, _OneTimePreKeyCount>
                                   signedOneTimeQuantumPreKeys;
     };
     
@@ -130,12 +152,12 @@ namespace gcrypt
     struct local_key_bundle
     {
         xckeypair              IdentityKey;
-        xckeypair              SignedPreKey;
-        qkeypair               QuantumPreKey;
+        xcikeypair             SignedPreKey;
+        qikeypair              QuantumPreKey;
 
-        std::vector<xckeypair> OneTimePreKeys;
-        std::vector<qkeypair>  OneTimeQuantumKeys;
-    };  
+        std::unordered_map<uint32_t, xckeypair> OneTimePreKeys;
+        std::unordered_map<uint32_t, qkeypair>  OneTimeQuantumKeys;
+    };
     /// @brief Initializes this device's local key bundle.
     /// @tparam _OneTimePreKeyCount 
     /// @param deviceId 

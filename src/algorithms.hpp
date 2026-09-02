@@ -35,6 +35,23 @@ namespace gcrypt
             xckey u_to_y(const xckey& U);
             xckey convert_mont(const xckey& U);
         }
+        /// @brief Returns the signature for the given key, message, and random byte sequence.
+        /// @tparam _MessageSize 
+        /// @param K The key to get the signature for
+        /// @param M The message
+        /// @param Z Random bytes
+        /// @return The signature
+        template<std::size_t _MessageSize>
+        key<64> sign32(xckey K, const std::array<uint8_t, _MessageSize>& M, key<64> Z);
+
+        /// @brief TODO
+        /// @tparam _MessageSize 
+        /// @param mkPub 
+        /// @param M 
+        /// @param rcs 
+        /// @return 
+        template<std::size_t _MessageSize>
+        bool verify32(xckey mkPub, const std::array<uint8_t, _MessageSize>& M, key<64> rcs);
     }
     namespace HKDF
     {
@@ -56,7 +73,7 @@ namespace gcrypt
         /// @brief Generates a kem key pair for a given public key<32>.
         /// @param PK 
         /// @return 
-        kem_keypair encapsulate(const xckey& PK);
+        kem_keypair encapsulate(const qpubkey& PK);
 
 
         /// @brief Generates a shared secret key<MLKEM_BYTES> from a given kem keypair.

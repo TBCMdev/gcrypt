@@ -8,10 +8,11 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# 1. Define MLK_CONFIG_PARAMETER_SET BEFORE FetchContent runs
-add_compile_definitions(MLK_CONFIG_PARAMETER_SET=1024)
+add_compile_definitions(
+    MLK_CONFIG_PARAMETER_SET=1024
+    MLK_CONFIG_NAMESPACE_PREFIX=mlkimpl
+    )
 
-# --- Fetch mlkem-native repository ---
 FetchContent_Declare(
     mlkem_native
     GIT_REPOSITORY https://github.com/pq-code-package/mlkem-native.git
@@ -19,7 +20,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(mlkem_native)
 
-# Automatically locate mlkem_native.h subfolder path
 find_path(MLKEM_NATIVE_INCLUDE_DIR
     NAMES mlkem_native.h
     PATHS
@@ -35,14 +35,12 @@ find_path(MLKEM_NATIVE_INCLUDE_DIR
     NO_DEFAULT_PATH
 )
 
-# --- Collect all C/C++ source files from /src ---
 file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
 )
 
 
-# --- Platform-Specific System Libraries ---
 set(PLATFORM_LIBS "")
 
 find_package(Threads REQUIRED)
@@ -52,13 +50,11 @@ if(WIN32)
     list(APPEND PLATFORM_LIBS ws2_32 crypt32 advapi32 user32)
 endif()
 
-# --- OpenSSL Setup ---
 set(OPENSSL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/openssl")
 set(OPENSSL_USE_STATIC_LIBS TRUE)
 
 find_package(OpenSSL REQUIRED)
 
-# --- Libsodium Setup ---
 set(SODIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/libsodium")
 
 if(EXISTS "${SODIUM_DIR}/include")
@@ -91,12 +87,10 @@ else()
     endif()
 endif()
 
-# --- Target Definition ---
 add_library(gcrypt STATIC
     ${CORE_SOURCES}
 )
 
-# --- Include Directories ---
 target_include_directories(gcrypt PRIVATE 
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${MLKEM_NATIVE_INCLUDE_DIR}"
@@ -104,7 +98,6 @@ target_include_directories(gcrypt PRIVATE
     "${mlkem_native_BINARY_DIR}"
 )
 
-# Desktop Fallback JNI Headers
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/android/include")
     target_include_directories(gcrypt PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/android/include"
@@ -112,7 +105,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/android/include")
 endif()
 
 
-# --- Target Linking ---
 target_link_libraries(gcrypt PRIVATE 
     OpenSSL::SSL 
     OpenSSL::Crypto 

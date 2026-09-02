@@ -2,6 +2,8 @@
 
 #include <cstring>
 #include <cstddef>
+
+#include <sodium.h>
 namespace gcrypt::util
 {
     template<std::size_t _Size>
@@ -54,5 +56,17 @@ namespace gcrypt::util
 
         return out;
     }
+    template<std::size_t _Size>
+    uint32_t keyid(const key<_Size>& publicKey)
+    {
+        uint32_t key_id = 0;
+        
+        crypto_generichash(
+            reinterpret_cast<unsigned char*>(&key_id), sizeof(key_id),
+            reinterpret_cast<const unsigned char*>(publicKey.data()), _Size,
+            nullptr, 0
+        );
 
+        return key_id;
+    }
 }

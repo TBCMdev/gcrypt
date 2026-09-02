@@ -107,7 +107,7 @@ namespace gcrypt::XedDSA
         }
     }
     template<std::size_t _MessageSize>
-    key<64> sign32(xckey K, std::array<uint8_t, _MessageSize> M, key<64> Z)
+    key<64> sign32(xckey K, const std::array<uint8_t, _MessageSize>& M, key<64> Z)
     {
         const xckeypair A = impl::calculate_key_pair(K);
         xckeypair R{};
@@ -132,7 +132,7 @@ namespace gcrypt::XedDSA
         return util::kconcat(R.Public, s);
     }
     template<std::size_t _MessageSize>
-    bool verify32(xckey mkPub, std::array<uint8_t, _MessageSize> M, key<64> rcs)
+    bool verify32(xckey mkPub, const std::array<uint8_t, _MessageSize>& M, key<64> rcs)
     {
         // lower half of r concat s
         xckey R = util::kcpy<GCRYPT_X25519_KEY_SIZE, 64>(rcs);
@@ -180,7 +180,7 @@ namespace gcrypt::HKDF
 }
 namespace gcrypt::MLKEM_32
 {
-    kem_keypair encapsulate(const xckey& PK)
+    kem_keypair encapsulate(const qpubkey& PK)
     {
         kem_keypair out{};
         const int _Ret = mlkimpl_enc(out.cipherText.data(), out.sharedSecret.data(), PK.data());
@@ -191,11 +191,11 @@ namespace gcrypt::MLKEM_32
         return out;
     }
     
-    key<MLKEM_BYTES> decapsulate(const kem_keypair& keys)
+    key<MLKEM_BYTES> decapsulate(const key<MLKEM_CTB>& cipherText, const qprivkey& privateKey)
     {
         key<MLKEM_BYTES> out{};
 
-        const int _Ret = mlkimpl_dec(out.data(), keys.cipherText.data(), keys.sharedSecret.data());
+        const int _Ret = mlkimpl_dec(out.data(), cipherText.data(), privateKey.data());
 
         if (_Ret != 0)
             throw std::runtime_error("MLKEM_32 dec failed with exit code: " + std::to_string(_Ret) + ".");
