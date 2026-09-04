@@ -1,5 +1,9 @@
 #pragma once
 #include "protocol.hpp"
+#include "util.hpp"
+#include "hashing.hpp"
+#include "keygen.hpp"
+#include <stdexcept>
 
 namespace gcrypt
 {
@@ -14,7 +18,11 @@ namespace gcrypt
         /// @param key 
         /// @return 
         xckey ycoord (const xckey& key);
-
+    }
+    namespace X25519
+    {
+        /// @brief Computes the shared secret between these two LPK and RPKs.
+        xckey ssecret(const xckey& localPrivateKey, const xckey& remotePublicKey);
     }
 
     namespace XedDSA
@@ -51,7 +59,7 @@ namespace gcrypt
             hashing::dhash hash_1 = hashing::hash255_i(1, util::kconcat(A.Private, M, Z));
 
             // r = hash_1(...) (mod q)
-            crypto_core_ed25519_scalar_reduce(R.Private.data(), hash_1.Digest.data());
+            crypto_core_ed25519_scalar_reduce(R.Private.data(), hash_1.data());
         
             R.Public = impl::bpscale(R.Private);
 
@@ -59,7 +67,7 @@ namespace gcrypt
 
             xckey s{}, ha{}, h{};
 
-            crypto_core_ed25519_scalar_reduce(h.data(), hash.Digest.data());
+            crypto_core_ed25519_scalar_reduce(h.data(), hash.data());
             {   // s = r + ha (mod q)
                 crypto_core_ed25519_scalar_mul(ha.data(), h.data(), A.Private.data());
                 crypto_core_ed25519_scalar_add(s.data(), R.Private.data(), ha.data());
@@ -67,14 +75,11 @@ namespace gcrypt
             return util::kconcat(R.Public, s);
         }
 
-        /// @brief TODO
+        /// @brief Verifies that the given signature is valid for the given Message (key), and the provided public identity key.
         /// @tparam _MessageSize 
-        /// @param mkPub 
-        /// @param M 
-        /// @param rcs 
-        /// @return 
+        /// @return true if the verification matches, false otherwise.
         template<std::size_t _MessageSize>
-        bool verify32(xckey mkPub, const std::array<uint8_t, _MessageSize>& M, key<64> rcs)
+        bool verify32(const xckey& mkPub, const std::array<uint8_t, _MessageSize>& M, key<64> rcs)
         {
             // lower half of r concat s
             xckey R = util::kcpy<GCRYPT_X25519_KEY_SIZE, 64>(rcs);
@@ -91,8 +96,8 @@ namespace gcrypt
 
             xckey h{};
             hashing::dhash hash = hashing::SHA(util::kconcat(R, A, M));
-            crypto_core_ed25519_scalar_reduce(h.data(), hash.Digest.data());
-        
+            crypto_core_ed25519_scalar_reduce(h.data(), hash.data());
+
             // r_check = sB - hA
             //         = s - h (memory wise)
             impl::bpscale(s); // s = sB
@@ -103,23 +108,41 @@ namespace gcrypt
             crypto_core_ed25519_scalar_sub(r_check.data(), s.data(), h.data());
 
             // ensure bytes equal (R == R_check)
-            return std::equal(r_check.begin(), r_check.end(), R.begin(), R.end());
+            return util::kmatch(r_check, R);
         }
     }
     namespace HKDF
     {
         /// @tparam _Size The size of the key to return. It must not be greater than crypto_kdf_hkdf_sha256_KEYBYTES.
         /// @param ikm the input key material
+        /// @throws std::runtime_error - if the extract failed.
         /// @return a key of size _Size.
         template<std::size_t _Size>
         key<_Size> extract(const key<_Size>& salt, const key<_Size>& ikm)
         {
             key<_Size> out{};
 
-            if (crypto_kdf_hkdf_sha256_extract(out.data(), salt.data(), _Size, ikm.data(), _Size) == 0)
+            if (crypto_kdf_hkdf_sha256_extract(out.data(), salt.data(), _Size, ikm.data(), _Size) != 0)
                 throw std::runtime_error("HKDF_sha256_extract failed.");
 
             return out;
+        }
+        
+        /// @brief Implements the KDF(KM) implementation found at https://signal.org/docs/specifications/pqxdh/#introduction
+        /// @throws std::runtime_error - if the extract failed.
+        /// @note  uses the implementation defined for curve 25519.
+        template<std::size_t _OutputSize, std::size_t _IkmSize>
+        key<_OutputSize> KDF(const key<_IkmSize>& secretKeyMaterial)
+        {
+
+            // TODO: PROBLEMS WITH THIS ALGORITHMS
+
+            // 32 bytes of 0xFF.
+            const xckey K = keygen::from_lebyte<GCRYPT_X25519_KEY_SIZE>(0xFF);
+            // _Size bytes of 0x00.
+            const key<_Size> salt = keygen::from_lebyte<_Size>(0x00);
+        
+            return extract<_OutputSize>(salt, util::kconcat(K, secretKeyMaterial));
         }
     }
     namespace MLKEM_32
@@ -131,7 +154,7 @@ namespace gcrypt
         } kem_keypair;
 
 
-        /// @brief Generates a kem key pair for a given public key<32>.
+        /// @brief Generates a kem key pair for a given quantum public key.
         /// @param PK 
         /// @return 
         kem_keypair encapsulate(const qpubkey& PK);

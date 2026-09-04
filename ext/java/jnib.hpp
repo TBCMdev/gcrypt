@@ -33,7 +33,8 @@
 
 // Jni Object parameter
 #define JNI_POBJ(x) "L" x ";"
-
+// used to denote a conversion from obj->jobject visually.
+#define JNI_OBJREF(obj) jobject
 
 
 #pragma region JNI_InbuildMappings
@@ -46,13 +47,17 @@
 #pragma endregion
 
 #pragma region JNI_StructureMappings
-    #define JNI_INBUILT_hashmap_CLASSNAME_MAPPING       JAVA_LANG_PACKAGE "HashMap"
-    #define JNI_local_key_bundle_CLASSNAME_MAPPING      GCRYPT_PKG_PATH "GcryptLocalKeyBundle"
-    #define JNI_key_pair_CLASSNAME_MAPPING              GCRYPT_PKG_PATH "GcryptKeyPair"
-    #define JNI_id_key_CLASSNAME_MAPPING                GCRYPT_PKG_PATH "GcryptIdKey"
-    #define JNI_sid_key_CLASSNAME_MAPPING               GCRYPT_PKG_PATH "GcryptSidKey"
-    #define JNI_public_server_payload_CLASSNAME_MAPPING GCRYPT_PKG_PATH "GcryptPublicServerPayload"
-    #define JNI_refill_payload_CLASSNAME_MAPPING        GCRYPT_PKG_PATH "GcryptKeyRefillPayload"
+    #define JNI_INBUILT_hashmap_CLASSNAME_MAPPING           JAVA_LANG_PACKAGE "HashMap"
+    #define JNI_local_key_bundle_CLASSNAME_MAPPING          GCRYPT_PKG_PATH "GcryptLocalKeyBundle"
+    #define JNI_key_pair_CLASSNAME_MAPPING                  GCRYPT_PKG_PATH "GcryptKeyPair"
+    #define JNI_id_key_CLASSNAME_MAPPING                    GCRYPT_PKG_PATH "GcryptIdKey"
+    #define JNI_sid_key_CLASSNAME_MAPPING                   GCRYPT_PKG_PATH "GcryptSidKey"
+    #define JNI_public_server_payload_CLASSNAME_MAPPING     GCRYPT_PKG_PATH "GcryptPublicServerPayload"
+    #define JNI_refill_payload_CLASSNAME_MAPPING            GCRYPT_PKG_PATH "GcryptKeyRefillPayload"
+    #define JNI_foreign_prekey_bundle_CLASSNAME_MAPPING     GCRYPT_PKG_PATH "GcryptForeignPreKeyBundle"
+    #define JNI_session_init_result_CLASSNAME_MAPPING       GCRYPT_PKG_PATH "GcryptSessionInitResult"
+    #define JNI_initial_message_handshake_CLASSNAME_MAPPING GCRYPT_PKG_PATH "GcryptInitialMessageHandshake"
+    #define JNI_messaging_session_CLASSNAME_MAPPING         GCRYPT_PKG_PATH "GcryptMessagingSession"
 #pragma endregion
 
 #pragma region JNI_ObjectMethodSignatures
@@ -67,6 +72,7 @@
     #define JNI_sid_key_CONSTRUCTOR_SIG               "([BI[B)V"
     #define JNI_public_server_payload_CONSTRUCTOR_SIG "()V"
     #define JNI_refill_payload_CONSTRUCTOR_SIG        "()V"
+    #define JNI_foreign_prekey_bundle_CONSTRUCTOR_SIG "()V"
 #pragma endregion
 
 namespace gcrypt::jni
@@ -90,7 +96,7 @@ namespace gcrypt::jni
 }
 
 /// @brief JNI Object Mapping
-namespace gcrypt::jniOM
+namespace gcrypt::jniOM::from
 {
     template<std::size_t _Bytes>
     jbyteArray key(JNI_PCONTEXT, const gcrypt::key<_Bytes>& k)
@@ -268,10 +274,10 @@ namespace gcrypt::jniOM
     }
 
     // =========================================================================
-    // Structure Mappers
+    // Structure Mappers Java <- CPP
     // =========================================================================
 
-    jobject local_key_bundle(JNI_PCONTEXT, const gcrypt::local_key_bundle& bundle)
+    jobject local_key_bundle(JNI_PCONTEXT, const gcrypt::pqxdh::local_key_bundle& bundle)
     {
         const jclass clazz = env->FindClass(JNI_local_key_bundle_CLASSNAME_MAPPING);
         if (!clazz) return nullptr;
@@ -313,7 +319,7 @@ namespace gcrypt::jniOM
         return obj;
     }
 
-    jobject refill_payload(JNI_PCONTEXT, const gcrypt::refill_payload& payload)
+    jobject refill_payload(JNI_PCONTEXT, const gcrypt::pqxdh::refill_payload& payload)
     {
         const jclass clazz = env->FindClass(JNI_refill_payload_CLASSNAME_MAPPING);
         if (!clazz) return nullptr;
@@ -356,7 +362,7 @@ namespace gcrypt::jniOM
     }
 
     template<std::size_t _OneTimePreKeyCount>
-    jobject public_server_payload(JNI_PCONTEXT, const gcrypt::public_server_payload<_OneTimePreKeyCount>& payload)
+    jobject public_server_payload(JNI_PCONTEXT, const gcrypt::pqxdh::public_server_payload<_OneTimePreKeyCount>& payload)
     {
         const jclass clazz = env->FindClass(JNI_public_server_payload_CLASSNAME_MAPPING);
         if (!clazz) return nullptr;
@@ -417,4 +423,79 @@ namespace gcrypt::jniOM
         env->DeleteLocalRef(clazz);
         return obj;
     }
+
+    
+}
+
+namespace gcrypt::jniOM::to
+{
+    // =========================================================================
+    // Structure Mappers Java -> CPP
+    // =========================================================================
+    template<std::size_t _Bytes>
+    std::optional<gcrypt::key<_Bytes>> to_key(JNI_PCONTEXT, jbyteArray array)
+    {
+        if (!array || env->GetArrayLength(array) != static_cast<jsize>(_Bytes)) {
+            return std::nullopt;
+        }
+        gcrypt::key<_Bytes> k;
+        env->GetByteArrayRegion(array, 0, static_cast<jsize>(_Bytes), reinterpret_cast<jbyte*>(k.data()));
+        return k;
+    }
+
+    template<std::size_t _Bytes>
+    std::optional<gcrypt::idkey<_Bytes>> to_id_key(JNI_PCONTEXT, jobject obj)
+    {
+        if (!obj) return std::nullopt;
+
+        jclass clazz = env->GetObjectClass(obj);
+        jfieldID fid_key = env->GetFieldID(clazz, "key", "[B");
+        jfieldID fid_id  = env->GetFieldID(clazz, "identifier", "I");
+
+        jbyteArray jkey = static_cast<jbyteArray>(env->GetObjectField(obj, fid_key));
+        jint id = env->GetIntField(obj, fid_id);
+
+        auto kOpt = key<_Bytes>(JNI_CONTEXT, jkey);
+
+        if (jkey) env->DeleteLocalRef(jkey);
+        env->DeleteLocalRef(clazz);
+
+        if (!kOpt) return std::nullopt;
+
+        return gcrypt::idkey<_Bytes>{
+            .key        = *kOpt,
+            .identifier = static_cast<uint32_t>(id)
+        };
+    }
+
+    template<std::size_t _Bytes, std::size_t _SigBytes>
+    std::optional<gcrypt::sidkey<_Bytes, _SigBytes>> to_sid_key(JNI_PCONTEXT, jobject obj)
+    {
+        if (!obj) return std::nullopt;
+
+        jclass clazz = env->GetObjectClass(obj);
+        jfieldID fid_key = env->GetFieldID(clazz, "key", "[B");
+        jfieldID fid_id  = env->GetFieldID(clazz, "identifier", "I");
+        jfieldID fid_sig = env->GetFieldID(clazz, "signature", "[B");
+
+        jbyteArray jkey = static_cast<jbyteArray>(env->GetObjectField(obj, fid_key));
+        jint id         = env->GetIntField(obj, fid_id);
+        jbyteArray jsig = static_cast<jbyteArray>(env->GetObjectField(obj, fid_sig));
+
+        auto kOpt   = key<_Bytes>(JNI_CONTEXT, jkey);
+        auto sigOpt = key<_SigBytes>(JNI_CONTEXT, jsig);
+
+        if (jkey) env->DeleteLocalRef(jkey);
+        if (jsig) env->DeleteLocalRef(jsig);
+        env->DeleteLocalRef(clazz);
+
+        if (!kOpt || !sigOpt) return std::nullopt;
+
+        return gcrypt::sidkey<_Bytes, _SigBytes>{
+            .key        = *kOpt,
+            .identifier = static_cast<uint32_t>(id),
+            .signature  = *sigOpt
+        };
+    }
+    
 }

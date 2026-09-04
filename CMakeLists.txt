@@ -50,11 +50,6 @@ if(WIN32)
     list(APPEND PLATFORM_LIBS ws2_32 crypt32 advapi32 user32)
 endif()
 
-set(OPENSSL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/openssl")
-set(OPENSSL_USE_STATIC_LIBS TRUE)
-
-find_package(OpenSSL REQUIRED)
-
 set(SODIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/libsodium")
 
 if(EXISTS "${SODIUM_DIR}/include")
@@ -106,8 +101,6 @@ endif()
 
 
 target_link_libraries(gcrypt PRIVATE 
-    OpenSSL::SSL 
-    OpenSSL::Crypto 
     libsodium 
     mlkem_native 
     ${PLATFORM_LIBS}

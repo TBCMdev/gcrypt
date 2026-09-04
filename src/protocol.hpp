@@ -5,6 +5,8 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <variant>
+#include <optional>
 
 #define GCRYPT_VERSION_STRING "0.0.1"
 #define GCRYPT_X25519_KEY_SIZE 32
@@ -94,7 +96,7 @@ namespace gcrypt
     /// @brief curve (X25519 alg) key
     using xckey        = key<GCRYPT_X25519_KEY_SIZE>;
     using xcikey       = idkey<GCRYPT_X25519_KEY_SIZE>;
-    using xcsikey      = sidkey<GCRYPT_X25519_KEY_SIZE>;
+    using xcsikey      = sidkey<GCRYPT_X25519_KEY_SIZE, GCRYPT_SIGNATURE_SIZE>;
     using xckeypair    = keypair<GCRYPT_X25519_KEY_SIZE>;
     /// @brief An identifiable xcurve key. Note that the public key contains the indentifier, yet can be used to identify the private key as well.
     using xcikeypair   = keypair<GCRYPT_X25519_KEY_SIZE, idkey, key>;
@@ -104,7 +106,7 @@ namespace gcrypt
     using edikeypair   = xcikeypair;
     
     /// @brief Ed25519 curve key with signature and identifier
-    using edsidkey     = sidkey<GCRYPT_X25519_KEY_SIZE, GCRYPT_SIGNATURE_SIZE>;
+    using edsidkey     = xcsikey;
 
     /// @brief quantum key
     using qpubkey      = key<MLKEM_PKB>;
@@ -112,113 +114,17 @@ namespace gcrypt
     using qprivkey     = key<MLKEM_SKB>;
     using qprivikey    = idkey<MLKEM_PKB>;
 
-    using qpubsidkey   = sidkey<MLKEM_PKB>;
-    using qprivsidkey  = sidkey<MLKEM_PKB>;
+    using qpubsidkey   = sidkey<MLKEM_PKB, GCRYPT_SIGNATURE_SIZE>;
+    using qprivsidkey  = sidkey<MLKEM_PKB, GCRYPT_SIGNATURE_SIZE>;
 
     using qkeypair     = ukeypair<MLKEM_PKB, MLKEM_SKB>;
     using qikeypair    = ukeypair<MLKEM_PKB, MLKEM_SKB, idkey, key>;
     /// @brief quantum key with signature and identifier
     using qsidkey      = sidkey<MLKEM_CTB, GCRYPT_SIGNATURE_SIZE>;
 
-    /// @brief Represents a generated pair of curve and quantum keys.
-    ///        The maps are to be private, and merged with local key storage,
-    ///        and the arrays are used for public external (server-side) use if required.
-    struct refill_payload
-    {
-        std::vector<xcikey>  oneTimePreKeys;
-        std::vector<qsidkey> signedOneTimeQuantumPreKeys;
-    };
-
-
-    /// @brief A payload sent to the server to register a devices keys. Note that all keys below are PUBLIC.
-    /// @tparam _OneTimePreKeyCount the amount of one time pre keys you want to give to the server.
-    template<std::size_t _OneTimePreKeyCount>
-    struct public_server_payload
-    {
-        #define GCRYPT_MAX_REGISTRATION_VALUE 16380
-        uint32_t                  registration,
-                                  deviceId;
-        xckey      identityKey; // x curve key
-        xcsikey    signedPreKey; // x curve sig+id key
-        qpubsidkey quantumPreKey; // quantum public sig+id key
-
-        std::array<xcikey, _OneTimePreKeyCount>
-                                  oneTimePreKeys;
-        std::array<qsidkey, _OneTimePreKeyCount>
-                                  signedOneTimeQuantumPreKeys;
-    };
+    /// @brief (just a varying array of bytes).
+    using vbytearray = std::vector<uint8_t>;
+    /// @brief A key of varying size. (just a vector of bytes).
+    using vkey = vbytearray;
     
-    /// @brief All keys stored locally.
-    struct local_key_bundle
-    {
-        xckeypair              IdentityKey;
-        xcikeypair             SignedPreKey;
-        qikeypair              QuantumPreKey;
-
-        std::unordered_map<uint32_t, xckeypair> OneTimePreKeys;
-        std::unordered_map<uint32_t, qkeypair>  OneTimeQuantumKeys;
-    };
-    /// @brief Initializes this device's local key bundle.
-    /// @tparam _OneTimePreKeyCount 
-    /// @param deviceId 
-    /// @return The created bundle
-    local_key_bundle make_lkb(uint32_t deviceId);
-
-    /// @brief Creates a server welcome payload with everything it needs to setup encryption.
-    /// @tparam _OneTimePreKeyCount 
-    /// @param keys 
-    /// @return The created payload
-    template<std::size_t _OneTimePreKeyCount>
-    public_server_payload<_OneTimePreKeyCount> make_server_payload(uint32_t deviceId, const local_key_bundle& keys)
-    {
-        const key<64> Z_SPK   = keygen::random<64>();
-        const key<64> Z_PQSPK = keygen::random<64>();
-    
-        uint32_t registration = randombytes_uniform(GCRYPT_MAX_REGISTRATION_VALUE) + 1;
-
-        std::array<xcikey, _OneTimePreKeyCount> pOtpk;
-        std::array<qsidkey, _OneTimePreKeyCount> pOtQpk;
-        
-        for (std::size_t i = 0; i < _OneTimePreKeyCount; i++)
-        {
-            const auto& okey = keys.OneTimePreKeys[i];
-            pOtpk[i] = xcikey
-            {
-                .key        = okey.Public,
-                .identifier = okey.identifier
-            };
-
-            const auto& qkey = keys.OneTimeQuantumKeys[i];
-            const key<64> Z_N   = keygen::random<64>();
-
-            pOtQpk[i] = qsidkey
-            {
-                .key        = qkey.Public,
-                .identifier = qkey.identifier,
-                .signature  = XedDSA::sign32(keys.IdentityKey.Private, qkey.Public, Z_N)
-            };
-        }
-
-        return public_server_payload<_OneTimePreKeyCount>
-        {
-            .registration = registration,
-            .deviceId     = deviceId,
-
-            .identityKey    = keys.IdentityKey.Public,
-            .signedPreKey   = xcsikey 
-                            {
-                                .key         = keys.SignedPreKey.Public,
-                                .identifier  = keys.SignedPreKey.Public.identifier,
-                                .signature   = XedDSA::sign32(keys.IdentityKey.Private, keys.SignedPreKey.Public, Z_SPK)
-                            }
-            .quantumPreKey  = qpubsidkey 
-                            {
-                                .key         = keys.SignedPreKey.Public,
-                                .identifier  = keys.SignedPreKey.Public.identifier,
-                                .signature   = XedDSA::sign32(keys.IdentityKey.Private, keys.QuantumPreKey.Public, Z_PQSPK)
-                            }
-            .oneTimePreKeys              = pOtpk
-            .signedOneTimeQuantumPreKeys = pOtQpk
-        };
-    }
 }

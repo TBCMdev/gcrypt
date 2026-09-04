@@ -25,7 +25,16 @@ namespace gcrypt::Ed25519
         ycoord(&out);
         return out;
     }
-    
+}
+namespace gcrypt::X25519
+{
+    xckey ssecret(const xckey& localPrivateKey, const xckey& remotePublicKey)
+    {
+        xckey out{};
+        if (crypto_scalarmult_curve25519(out.data(), localPrivateKey.data(), remotePublicKey.data()) != 0)
+            throw std::runtime_error("Gathering shared secret in X25519 key pair failed.");
+        return out;
+    }
 }
 
 namespace gcrypt::XedDSA
@@ -110,6 +119,7 @@ namespace gcrypt::XedDSA
 
 namespace gcrypt::MLKEM_32
 {
+    
     kem_keypair encapsulate(const qpubkey& PK)
     {
         kem_keypair out{};

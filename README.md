@@ -25,7 +25,6 @@ Gcrypt uses the following algorithms (contained in the [Signal protocol spec](ht
 Currently, **Gcrypt** relies on:
 - [mlkem-native-**2.0.0**](https://github.com/pq-code-package/mlkem-native) 
 - [libsodium-**1.0.22**](https://libsodium.gitbook.io/doc)
-- [openSSL-**4.0**](https://openssl-library.org)
 
 ## Design
 
@@ -54,12 +53,6 @@ CMake is configured to output the code as a `.lib`. It is also configured to fet
         /lib
             libsodium.lib
             libsodium.pdf
-    /openssl
-        /include
-            /openssl
-        /lib
-            libcrypto*
-            libssl*
 /src
     ...
 ```
@@ -74,4 +67,14 @@ Any issues found with the implementation can be registered through the [issues p
 
 The [java](https://github.com/TBCMDev/gcrypt/tree/ext/java) folder in the ext directory contains files that can be used to interface the gcrypt API with java/kotlin. Currently, no docs are available; the file contains important wrappers that mimic the structure of the protocol's high level functions only.
 
-<sub>wadsd</sub>
+### Customizing
+
+The following macros can be defined:
+
+#### `GCRYPT_NOSTORE`
+If defined, no storage implementation will be included in the build. This allows for people using Gcrypt for other cryptographic reasons.
+For people using gcrypt for a complete signal implementation, they should not define this macro and instead implement the functions found in `sessions.hpp` to allow for in memory and disk storage of sessions and keys.
+
+#### `MLK_CONFIG_PARAMETER_SET`
+
+Defines the size of the post quantum keys to generate via the MLK algorithm.

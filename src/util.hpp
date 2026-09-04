@@ -7,8 +7,11 @@
 
 #include <sodium.h>
 
+
+
 namespace gcrypt::util
 {
+
 
     namespace types
     {
@@ -17,6 +20,14 @@ namespace gcrypt::util
 
         template<std::size_t... _Sizes>
         using sum_size_t = std::integral_constant<std::size_t, (... + _Sizes)>;
+    }
+
+    /// @brief Returns true if both keys are identical.
+    /// @tparam _Size The byte size of the key.
+    template<std::size_t _Size>
+    bool kmatch(const key<_Size>& k1, const key<_Size>& k2)
+    {
+        return std::equal(k1.begin(), k1.end(), k2.begin(), k2.end());
     }
 
     /// @brief Copies a keys data.
@@ -30,7 +41,7 @@ namespace gcrypt::util
 
     /// @brief Copies _Take bytes of a keys data to a key of length: _Take bytes.
     template<std::size_t _Take, std::size_t _Size>
-    key<_Take> kcpy(const key<_Size>& k, std::size_t offset)
+    key<_Take> kcpy(const key<_Size>& k, std::size_t offset = 0)
     {
         key<_Take> out{};
         std::memcpy(out.data(), k.data() + offset, _Take);
@@ -54,7 +65,6 @@ namespace gcrypt::util
     key<types::sum_size_t<_Pre, _Post>::value> kconcat(const key<_Pre>& k1, const key<_Post>& k2)
     {
         key<types::sum_size_t<_Pre, _Post>::value> out{};
-
 
         std::memcpy(out.data(), k1.data(), _Pre);
         std::memcpy(out.data() + _Pre, k2.data(), _Post);
