@@ -38,7 +38,7 @@ namespace gcrypt
 
             // other util functions. https://signal.org/docs/specifications/xeddsa/
 
-            xckeypair calculate_key_pair(xckey K);
+            xckeypair calculate_key_pair(const xckey& K);
             bool sig_in_bounds(const xckey& mkPub, const xckey& R, const xckey& s);
             xckey u_to_y(const xckey& U);
             xckey convert_mont(const xckey& U);
@@ -50,7 +50,7 @@ namespace gcrypt
         /// @param Z Random bytes
         /// @return The signature
         template<std::size_t _MessageSize>
-        key<64> sign32(xckey K, const std::array<uint8_t, _MessageSize>& M, key<64> Z)
+        key<64> sign32(const xckey& K, const key<_MessageSize>& M, key<64> Z)
         {
             const xckeypair A = impl::calculate_key_pair(K);
             xckeypair R{};
@@ -79,7 +79,7 @@ namespace gcrypt
         /// @tparam _MessageSize 
         /// @return true if the verification matches, false otherwise.
         template<std::size_t _MessageSize>
-        bool verify32(const xckey& mkPub, const std::array<uint8_t, _MessageSize>& M, key<64> rcs)
+        bool verify32(const xckey& mkPub, const key<_MessageSize>& M, key<64> rcs)
         {
             // lower half of r concat s
             xckey R = util::kcpy<GCRYPT_X25519_KEY_SIZE, 64>(rcs);
@@ -113,36 +113,56 @@ namespace gcrypt
     }
     namespace HKDF
     {
-        /// @tparam _Size The size of the key to return. It must not be greater than crypto_kdf_hkdf_sha256_KEYBYTES.
         /// @param ikm the input key material
         /// @throws std::runtime_error - if the extract failed.
         /// @return a key of size _Size.
-        template<std::size_t _Size>
-        key<_Size> extract(const key<_Size>& salt, const key<_Size>& ikm)
+        template<std::size_t _SaltSize, std::size_t _IkmSize>
+        key<32> extract(const key<_SaltSize>& salt, const key<_IkmSize>& ikm)
         {
-            key<_Size> out{};
+            key<32> out{};
 
-            if (crypto_kdf_hkdf_sha256_extract(out.data(), salt.data(), _Size, ikm.data(), _Size) != 0)
+            if (crypto_kdf_hkdf_sha256_extract(out.data(), salt.data(), _SaltSize, ikm.data(), _IkmSize) != 0)
                 throw std::runtime_error("HKDF_sha256_extract failed.");
 
             return out;
+        }
+
+        template<std::size_t _OutputSize, std::size_t _PRKSize>
+        key<_OutputSize> expand(const key<_PRKSize>& prk, const std::string_view info)
+        {
+            key<_OutputSize> okm{};
+
+            if (crypto_kdf_hkdf_sha256_expand(
+                    okm.data(), okm.size(),
+                    info.data(), info.length(),
+                    prk.data()) != 0)
+            {
+                throw std::runtime_error("HKDF_sha256_expand failed.");
+            }
+
+            return okm;
         }
         
         /// @brief Implements the KDF(KM) implementation found at https://signal.org/docs/specifications/pqxdh/#introduction
         /// @throws std::runtime_error - if the extract failed.
         /// @note  uses the implementation defined for curve 25519.
         template<std::size_t _OutputSize, std::size_t _IkmSize>
-        key<_OutputSize> KDF(const key<_IkmSize>& secretKeyMaterial)
+        key<_OutputSize> KDF(const key<_IkmSize>& secretKeyMaterial, const std::string_view appDomainInfo = "PQX3DH")
         {
+            // F = 32 bytes of 0xFF for Curve25519 (57 bytes of 0xFF for Curve448)
+            const auto F = keygen::filled<GCRYPT_X25519_KEY_SIZE>(0xFF);
 
-            // TODO: PROBLEMS WITH THIS ALGORITHMS
+            // KM = F || secretKeyMaterial
+            const auto KM = util::kconcat(F, secretKeyMaterial);
 
-            // 32 bytes of 0xFF.
-            const xckey K = keygen::from_lebyte<GCRYPT_X25519_KEY_SIZE>(0xFF);
-            // _Size bytes of 0x00.
-            const key<_Size> salt = keygen::from_lebyte<_Size>(0x00);
-        
-            return extract<_OutputSize>(salt, util::kconcat(K, secretKeyMaterial));
+            // salt = 32 bytes of 0x00
+            const auto salt = keygen::filled<32>(0x00);
+
+            // PRK = HKDF-Extract(salt, KM)
+            auto prk = extract(salt, KM);
+
+            // OKM = HKDF-Expand(PRK, info, OutputSize)
+            return expand<_OutputSize>(prk, appDomainInfo);
         }
     }
     namespace MLKEM_32

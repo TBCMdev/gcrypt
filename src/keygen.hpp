@@ -43,7 +43,7 @@ namespace gcrypt::keygen
     /// @tparam _Size The size of the key to create
     /// @tparam ..._Bytes the bytes to set
     template<std::size_t _Size, std::convertible_to<uint8_t> _ByteType>
-    constexpr key<_Size> from_lebyte(_ByteType byte)
+    constexpr key<_Size> filled(_ByteType byte)
     {
         key<_Size> out{};
 
@@ -52,19 +52,7 @@ namespace gcrypt::keygen
         return out;
     }
 
-    /// @brief Safely zeros out the memory of the given key.
-    template<std::size_t _Size>
-    void kill(key<_Size>& key)
-    {
-        sodium_memzero(key.data(), _Size);
-    }
-
-    /// @brief Safely zeros out the memory of the given keys.
-    template<std::size_t... _Sizes>
-    void kill(key<_Sizes>&... keys)
-    {
-        (kill(keys), ...);
-    }
+    
 
     /// @brief Generates a cryptographically secure random key of _Size bytes.
     template<std::size_t _Size>

@@ -1,6 +1,5 @@
 #include "algorithms.hpp"
 
-#include <sodium.h>
 #include <cstring>
 #include <stdexcept>
 
@@ -52,7 +51,7 @@ namespace gcrypt::XedDSA
             auto d = scalar->data();
             crypto_scalarmult_ed25519_base_noclamp(d, d);
         }
-        xckeypair calculate_key_pair(xckey K)
+        xckeypair calculate_key_pair(const xckey& K)
         {
             const xckey E  = bpscale(K);
             const bool Es = Ed25519::signbit(E);

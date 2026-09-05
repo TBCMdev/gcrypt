@@ -5,7 +5,7 @@
 
 namespace gcrypt::pqxdh
 {
-
+    
     /// @brief Represents a generated pair of curve and quantum keys.
     ///        The maps are to be private, and merged with local key storage,
     ///        and the arrays are used for public external (server-side) use if required.
@@ -33,6 +33,8 @@ namespace gcrypt::pqxdh
                                   signedOneTimeQuantumPreKeys;
     };
     
+
+
     /// @brief All keys stored locally.
     struct local_key_bundle
     {
@@ -119,7 +121,7 @@ namespace gcrypt::pqxdh
 
                 .remoteIdentityKey = keys.identityKey,
                 .rootKey = KDFSecretKey,
-                .sequenceNumber = 0
+                .sendSequence = 0
             };
 
             return session_init_result
@@ -224,13 +226,12 @@ GCRYPT_FUNC_USES_STORAGE
     std::optional<store::messaging_session> create_inbound_session(const initial_message_handshake& handshake);
     /// @brief Attempts to create a session from an inbound initial_message_handshake object.
     /// @note This function does not query storage to fetch the used private keys, as they are passed as arguments.
-    /// @param usedPrivatePreKey the corresponding private key of the public one time pre key that the handshake used.
-    /// @param usedPrivateQuantumPreKey the corresponding private key of the public one time quantum pre key that the handshake used.
-    /// @param handshake The incoming handshake
     /// @return The session if it was created.
     std::optional<store::messaging_session> create_inbound_session(
-                                    const xckey&                     usedPrivatePreKey,
-                                    const key<MLKEM_SKB>             usedPrivateQuantumPreKey,
-                                    const initial_message_handshake& handshake
+                                    const xckeypair&                     localIdentityKey,
+                                    const xckey&                         usedPrivateSignedPreKey,
+                                    const std::optional<xckey>&          usedPrivateOneTimePreKey,
+                                    const key<MLKEM_SKB>&                usedPrivateQuantumPreKey,
+                                    const initial_message_handshake&     handshake
                                                                 );
 }

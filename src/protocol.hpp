@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <variant>
 #include <optional>
+#include <span>
+#include <sodium.h>
 
 #define GCRYPT_VERSION_STRING "0.0.1"
 #define GCRYPT_X25519_KEY_SIZE 32
@@ -35,8 +37,69 @@ extern "C"
 
 namespace gcrypt
 {
+
+    template<std::size_t _Size>
+    using bytekey = std::array<uint8_t, _Size>;
+
+    /// @brief (just a varying array of bytes).
+    using bytespan = std::span<uint8_t>;
+    /// @brief A key of varying size
+    using vkey = std::vector<uint8_t>;
+
+
     template<std::size_t _Bytes>
-    using key = std::array<uint8_t, _Bytes>;
+    class key
+    {
+    private:
+        std::array<uint8_t, _Bytes> impl_storage{};
+    public:
+        key() = default;
+        key(const key& other) = default;
+        key(key&& other) noexcept : impl_storage(other.impl_storage)
+        { other.kill(); }
+
+        ~key() { kill(); }
+
+        key& operator=(key&& other) noexcept
+        {
+            if (this != &other)
+            {
+                kill(); // Clear old secret first
+                impl_storage = other.impl_storage;
+                other.kill(); // Clear source
+            }
+            return *this;
+        }
+        key& operator=(const key& other)
+        {
+            if (this != &other)
+            {
+                kill(); // Erase current secret first
+                impl_storage = other.impl_storage;
+            }
+            return *this;
+        }
+
+        /// @brief Sets the memory region of this key to all zeros.
+        void kill() noexcept { sodium_memzero(data(), _Bytes); }
+
+        constexpr uint8_t* data() noexcept { return impl_storage.data(); }
+        std::array<uint8_t, _Bytes>& bytes() noexcept { return impl_storage; }
+        const std::array<uint8_t, _Bytes>& bytes() const noexcept { return impl_storage; }
+        constexpr const uint8_t* data() const noexcept { return impl_storage.data(); }
+        constexpr std::size_t size() const noexcept { return _Bytes; }
+
+        uint8_t& operator[](std::size_t idx) { return impl_storage[idx]; }
+        const uint8_t& operator[](std::size_t idx) const { return impl_storage[idx]; }
+        
+        operator bytekey<_Bytes>&() noexcept { return impl_storage; }
+        operator const bytekey<_Bytes>&() const noexcept { return impl_storage; }
+
+        auto begin() noexcept { return impl_storage.begin(); }
+        auto end() noexcept { return impl_storage.end(); }
+        auto begin() const noexcept { return impl_storage.begin(); }
+        auto end() const noexcept { return impl_storage.end(); }
+    };
 
     /// @brief The implementation of a generic keypair.
     /// @tparam _BytesPublic the public key's bytes
@@ -121,10 +184,4 @@ namespace gcrypt
     using qikeypair    = ukeypair<MLKEM_PKB, MLKEM_SKB, idkey, key>;
     /// @brief quantum key with signature and identifier
     using qsidkey      = sidkey<MLKEM_CTB, GCRYPT_SIGNATURE_SIZE>;
-
-    /// @brief (just a varying array of bytes).
-    using vbytearray = std::vector<uint8_t>;
-    /// @brief A key of varying size. (just a vector of bytes).
-    using vkey = vbytearray;
-    
 }

@@ -2,11 +2,11 @@
 
 #include "util.hpp"
 #include "keygen.hpp"
-
 namespace gcrypt::pqxdh
 {
     local_key_bundle make_lkb(uint32_t deviceId)
     {
+        GCRYPT_ASSERT_STORE();
         local_key_bundle out{};
 
         auto IdentityKeyResult   = keygen::Ed25519 ::make_pair();
@@ -41,6 +41,14 @@ namespace gcrypt::pqxdh
             OneTimeQuantumKeys.insert({util::keyid(val.Public), val});
         }
 
+    #ifndef GCRYPT_NOSTORE
+        // Public || Private
+        auto bytes = util::key_bytes(IdentityKeyResult->Public, IdentityKeyResult->Private);
+        if (!GCRYPT_ISTORE->store_identity_key_pair(bytes))
+            throw std::runtime_error("Gcrypt::store_identity_key_pair failed.");
+
+    #endif
+
         return local_key_bundle
         {
             .IdentityKey        = IdentityKeyResult.value(),
@@ -52,6 +60,8 @@ namespace gcrypt::pqxdh
     }
     refill_payload refill(const xckey& privIdentityKey, uint32_t Count)
     {
+        GCRYPT_ASSERT_STORE();
+        
         refill_payload payload{};
 
         payload.oneTimePreKeys.reserve(Count);
@@ -66,6 +76,14 @@ namespace gcrypt::pqxdh
             xckeypair x_pair = x_res.value();
             uint32_t  x_id   = util::keyid(x_pair.Public);
 
+        #ifndef GCRYPT_NOSTORE
+            {
+                auto bytes = util::key_bytes(x_pair.Public, x_pair.Private);
+                if (!GCRYPT_ISTORE->store_one_time_prekey(x_id, store::key_type::PREKEY, bytes))
+                    throw std::runtime_error("Gcrypt::store_one_time_prekey failed.");
+            }
+        #endif
+
             payload.oneTimePreKeys.push_back(xcikey
             {
                 .key        = x_pair.Public,
@@ -78,7 +96,13 @@ namespace gcrypt::pqxdh
 
             qkeypair q_pair = q_res.value();
             uint32_t q_id   = util::keyid(q_pair.Public);
-
+        #ifndef GCRYPT_NOSTORE
+            {
+                auto bytes = util::key_bytes(q_pair.Public, q_pair.Private);
+                if (!GCRYPT_ISTORE->store_one_time_prekey(q_id, store::key_type::QUANTUM, bytes))
+                    throw std::runtime_error("Gcrypt::store_one_time_prekey failed.");
+            }
+        #endif
             const key<64> Z_N = keygen::random<64>();
 
             qsidkey _qsidkey{};
@@ -106,9 +130,10 @@ namespace gcrypt::pqxdh
                 
         return true;
     }
-    std::optional<session_init_result> create_outbound_session(const xckeypair& localIdentityKey,
-                                                               const xckey& identityToVerifyAgainst,
-                                                               const foreign_prekey_bundle& keys
+    std::optional<session_init_result> create_outbound_session(
+                                            const xckeypair& localIdentityKey,
+                                            const xckey& identityToVerifyAgainst,
+                                            const foreign_prekey_bundle& keys
                                                               )
     {
         if (!verify_foreign_bundle(identityToVerifyAgainst, keys))
@@ -194,5 +219,60 @@ namespace gcrypt::pqxdh
         session.rootKey           = extract;                 // Derived Master Root Key
 
         return session;
+    }
+    std::optional<store::messaging_session> create_inbound_session(const initial_message_handshake& handshake)
+    {
+        GCRYPT_ASSERT_STORE();
+    #ifndef GCRYPT_NOSTORE
+
+        if (handshake.usedPreKeys.size() < 1)
+            return std::nullopt;
+
+        xckeypair                     localIdentityKey;
+        if (
+            auto pik = GCRYPT_ISTORE->load_identity_key_pair();
+            !pik.has_value()                                                ||
+            util::load_keyb_s(*pik, localIdentityKey.Public)                  ||
+            util::load_keyb_s(*pik, localIdentityKey.Private, sizeof(xckey))
+            )
+            return std::nullopt;
+        
+        xckey                         usedPrivateSignedPreKey;
+        if (
+            auto spk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedPreKeys[0], store::key_type::PREKEY);
+            !spk.has_value()                                                ||
+            util::load_keyb_s(*spk, usedPrivateSignedPreKey, sizeof(xckey))
+            )
+            return std::nullopt;
+
+        bool has_usedPrivateOneTimePreKey = handshake.usedPreKeys.size() > 1;
+        xckey                         usedPrivateOneTimePreKey;
+
+        if (has_usedPrivateOneTimePreKey)
+        {
+            if (
+                auto opk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedPreKeys[1], store::key_type::PREKEY);
+                !opk.has_value()                                                ||
+                util::load_keyb_s(*opk, usedPrivateOneTimePreKey, sizeof(xckey))
+                )
+                return std::nullopt;
+        }
+        key<MLKEM_SKB>                usedPrivateQuantumPreKey;
+        if (
+                auto qpk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedPreKeys[1], store::key_type::QUANTUM);
+                !qpk.has_value()                                                ||
+                util::load_keyb_s(*qpk, usedPrivateQuantumPreKey, MLKEM_SKB)
+                )
+                return std::nullopt;
+
+        
+        return create_inbound_session(localIdentityKey,
+                                      usedPrivateSignedPreKey,
+                                      has_usedPrivateOneTimePreKey ? (std::optional<xckey>)usedPrivateOneTimePreKey : std::nullopt,
+                                      usedPrivateQuantumPreKey,
+                                      handshake);
+    #else
+        return std::nullopt;
+    #endif
     }
 }

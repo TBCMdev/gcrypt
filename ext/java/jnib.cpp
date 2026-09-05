@@ -4,7 +4,6 @@
 #include "algorithms.hpp"
 #include "pqxdh.hpp"
 
-#include <sodium.h>
 
 using namespace gcrypt::pqxdh;
 #pragma region JNI_NonTemplateConversions

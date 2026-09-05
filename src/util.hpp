@@ -11,8 +11,6 @@
 
 namespace gcrypt::util
 {
-
-
     namespace types
     {
         template<std::size_t _S>
@@ -62,7 +60,7 @@ namespace gcrypt::util
 
     /// @brief Concatenates two varying sized keys together (k1 || k2) and returns the result.
     template<std::size_t _Pre, std::size_t _Post>
-    key<types::sum_size_t<_Pre, _Post>::value> kconcat(const key<_Pre>& k1, const key<_Post>& k2)
+    key<(_Pre + _Post)> kconcat(const key<_Pre>& k1, const key<_Post>& k2)
     {
         key<types::sum_size_t<_Pre, _Post>::value> out{};
 
@@ -71,11 +69,10 @@ namespace gcrypt::util
 
         return out;
     }
-    
 
     /// @brief Concatenates all varying sized keys together (k1 || k2 || ...) and returns the result.
     template<std::size_t... _Sizes>
-    key<types::sum_size_t<_Sizes...>::value> kconcat(const key<_Sizes>&... keys)
+    key<(_Sizes + ...)> kconcat(const key<_Sizes>&... keys)
     {
         key<types::sum_size_t<_Sizes...>::value> out{};
 
@@ -85,7 +82,6 @@ namespace gcrypt::util
 
         return out;
     }
-
 
     /// @brief Returns the id (hash) of a key. Can be used in place of a generic counter for
     /// @brief assigning identifiers to keys. 
@@ -104,6 +100,48 @@ namespace gcrypt::util
         );
 
         return key_id;
+    }
+
+    /// @brief Returns a variable array (vector) of the bytes each key, concatenated sequentially.
+    /// @tparam _Size The size of the keys
+    /// @param key the keys of varying byte-sizes.
+    /// @return the variable array of the keys internal bytes concatenated together.
+    template<std::size_t... _Sizes>
+    bytespan key_bytes(const key<_Sizes>&... keys)
+    {
+        std::vector<uint8_t> out{};
+        out.reserve(types::sum_size_t<_Sizes...>::value);
+        
+        size_t offset = 0;
+
+        ((std::copy(keys.begin(), keys.end(), out.begin() + offset), offset += keys.size()), ...);
+        
+        return out;
+    }
+
+    /// @brief Loads the specified byte region into the specified key instance.
+    /// @return Whether or not the operation was a success.
+    template<std::size_t _Size>
+    bool load_keyb(const bytespan& bytes, key<_Size>& ref, std::size_t offset = 0)
+    {
+        if (_Size + offset > bytes.size())
+            return false;
+
+        std::copy(bytes.begin() + offset, bytes.begin() + offset + _Size, ref.begin());
+
+        return true;
+    }
+    /// @brief Loads the specified byte region into the specified key instance,
+    ///        And memzeros the contents of the bytes buffer upon success.
+    /// @return Whether or not the operation was a success.
+    template<std::size_t _Size>
+    bool load_keyb_s(const bytespan& bytes, key<_Size>& ref, std::size_t offset = 0)
+    {
+        if (!load_keyb(bytes, ref, offset))
+            return false;
+
+        sodium_memzero(bytes.data(), _Size);
+        return true;
     }
 
 }
