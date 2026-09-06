@@ -1,5 +1,5 @@
 #pragma once
-
+#include "session.hpp"
 #include "protocol.hpp"
 #include "errors.hpp"
 #include <vector>
@@ -27,49 +27,9 @@
 ///        for the sub functions that this function invokes in order to query storage.
 #define GCRYPT_FUNC_USES_STORAGE
 
+
 namespace gcrypt::store
 {
-    struct skipped_message_key
-    {
-        xckey ratchetPublicKey;  // The remote ratchet key for this chain
-        uint32_t sequenceNumber; // Sequence number within that chain
-        key<32> messageKey;      // Unused derived message key
-    };
-
-    /// @brief Active Double Ratchet session state for a specific peer
-    struct messaging_session
-    {
-        // =========================================================================
-        // 1. Peer Identification
-        // =========================================================================
-        xckey remoteIdentityKey;            // Bob's verified long-term Public Identity Key
-        
-        // =========================================================================
-        // 2. Symmetric Chain Keys (Root & Chain HKDF state)
-        // =========================================================================
-        key<32> rootKey;                     // Root Key (RK) - updated on every DH ratchet turn
-        key<32> sendingChainKey;             // Sending Chain Key (CKs) - ratchets on every sent msg
-        key<32> receivingChainKey;           // Receiving Chain Key (CKr) - ratchets on every rcvd msg
-
-        // =========================================================================
-        // 3. Asymmetric DH Ratchet State
-        // =========================================================================
-        xckeypair localRatchetKey;           // Our current active DH key pair (DHs)
-        xckey remoteRatchetKey;              // Bob's current active DH public key (DHr)
-
-        // =========================================================================
-        // 4. Sequence Counters & Message Tracking
-        // =========================================================================
-        uint32_t sendSequence{0};            // Ns: Messages sent in current sending chain
-        uint32_t receiveSequence{0};         // Nr: Messages received in current receiving chain
-        uint32_t previousChainLength{0};    // PN: Message count of previous sending chain
-
-        // =========================================================================
-        // 5. Out-of-Order Message Handling
-        // =========================================================================
-        std::vector<skipped_message_key> skippedKeys; // Cache for out-of-order arrivals
-    };
-
     /// @brief Used to distinguish between keys and their sizes.
     enum class key_type
     {
@@ -82,10 +42,15 @@ namespace gcrypt::store
         QUANTUM
     };
 
+
     class storage_manager
     {
+    private:
+        std::unordered_map<std::string, session::msessionref> _LocalSessions;
     public:
         virtual ~storage_manager() = default;
+        
+        
 
         /// @brief Attempts to store the given session_blob, by invoking the implementers body for this function and querying their storage.
         /// @param recipient_id The identifier used to store this session. Something like "Alice:1".
@@ -102,12 +67,14 @@ namespace gcrypt::store
         /// @param recipient_id The identifier used to store this session. Something like "Alice:1".
         /// @throws not_implemented - if no implementation for this function exists. This is default behavior.
         /// @return The array of bytes directly representing a gcrypt::store::messaging_session.
-        inline virtual std::optional<vkey> load_session(const std::string& recipient_id)
+        inline virtual std::optional<session::messaging_session> load_session(const std::string& recipient_id)
             #ifdef GCRYPT_NOSTORE
                 { GCRYPT_STORE_NOT_IMPLEMENTED; }
             #else
                 = 0;
             #endif
+        
+
         /// @brief Attempts to store the given prekey bytes to the implementers storage with the given id to map it.
         /// @note Uses GCRYPT_KEY_MANAGER_INDEX_TYPE to determine the numeric data type used to index the key storage implementation.
         ///       This is defaulted to uint32_t.
@@ -167,6 +134,42 @@ namespace gcrypt::store
             #else
                 = 0;
             #endif
+
+
+        /// @brief Returns the cached session if an entry exists.
+        /// @param recipient_id the key for this session
+        /// @return The session reference (a shared ptr to the session), if a mapping exists
+        inline std::optional<session::msessionref> get_cached_session(const std::string& recipient_id) const
+        {
+            auto i = _LocalSessions.find(recipient_id);
+            return i != _LocalSessions.end() ? (std::optional<session::msessionref>)i->second : std::nullopt;
+        }
+        /// @brief Stores the given session in memory for faster access. This is called internally.
+        /// @param recipient_id The key for this session
+        /// @param session the session reference (a shared ptr to the session object).
+        inline void store_cached_session(const std::string& recipient_id, const session::msessionref& session)
+        {
+            _LocalSessions.insert_or_assign(recipient_id, session);
+        }
+
+        /// @brief Attempts to retrieve the session mapped to the given recipient id string.
+        ///        If not present in memory, this function invokes load_session to try to load it
+        ///        into memory. Then this session is stored in memory for faster access.
+        inline std::optional<session::msessionref> get_session(const std::string& recipient_id)
+        {
+            auto cache = get_cached_session(recipient_id);
+            if (cache.has_value())
+                return *cache;
+            
+            auto loaded = load_session(recipient_id);
+            if (!loaded.has_value())
+                return std::nullopt;
+            
+            session::msessionref ref (&loaded.value());
+
+            store_cached_session(recipient_id, ref);
+            return ref;
+        }
     };
 
 #define GCRYPT_ISTORE_NAME _StorageManagerHwnd

@@ -44,8 +44,8 @@ namespace gcrypt
     /// @brief (just a varying array of bytes).
     using bytespan = std::span<uint8_t>;
     /// @brief A key of varying size
-    using vkey = std::vector<uint8_t>;
-
+    using vkey     = std::vector<uint8_t>;
+    using bytedata = std::vector<uint8_t>;
 
     template<std::size_t _Bytes>
     class key
