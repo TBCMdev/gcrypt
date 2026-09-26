@@ -25,6 +25,19 @@ namespace gcrypt::Ed25519
         return out;
     }
 }
+namespace gcrypt::HKDF
+{
+    std::tuple<xckey, xckey> KDF_rk(const xckey& rk, const xckey& dhOut, const std::string_view appDomainInfo)
+    {
+        // PRK = HKDF-Extract(salt = rk, ikm = dh_out)
+        auto prk = extract(rk, dhOut);
+
+        // OKM = HKDF-Expand(PRK, info, L = 64)
+        key<64> okm = expand<64>(prk, appDomainInfo);
+
+        return util::kcut<sizeof(xckey), sizeof(xckey)>(okm);
+    }
+}
 namespace gcrypt::X25519
 {
     xckey ssecret(const xckey& localPrivateKey, const xckey& remotePublicKey)
@@ -139,5 +152,77 @@ namespace gcrypt::MLKEM_32
         if (_Ret != 0)
             throw std::runtime_error("MLKEM_32 dec failed with exit code: " + std::to_string(_Ret) + ".");
         return out;
+    }
+}
+
+
+namespace gcrypt::AEAD
+{
+    vkey encrypt(const bytespan& plaintext,
+                    const bytespan& assoc,
+                    const enc_key& ekey,
+                    const non_key& nonce)
+    {
+        vkey ciphertext (plaintext.size() + crypto_aead_chacha20poly1305_ietf_ABYTES);
+        unsigned long long clen = 0;
+        
+        int r = crypto_aead_chacha20poly1305_ietf_encrypt(ciphertext.data(),
+                                                &clen,
+                                                plaintext.data(),
+                                                plaintext.size(),
+                                                assoc.data(),
+                                                assoc.size(),
+                                                nullptr,
+                                                nonce.data(),
+                                                ekey.data());
+
+        if (r != 0)
+            throw std::runtime_error("AEAD::AES256 Encrypt unexpectedly failed.");
+        
+        ciphertext.resize(clen);
+        return ciphertext;
+    }
+    vkey encrypt(const bytespan& plaintext, const bytespan& assoc, const key<32> messageKey)
+    {
+        constexpr std::size_t EKB = sizeof(enc_key);
+        constexpr std::size_t NKB = sizeof(non_key);
+        constexpr std::size_t TKB = EKB + NKB;
+
+        auto okm = HKDF::expand<TKB>(messageKey, SP_INFO_STRING);
+
+        return encrypt(plaintext, assoc, util::kcpy<EKB>(okm), util::kcpy<NKB>(okm, EKB));
+    }
+    std::optional<vkey> decrypt(const bytespan& ciphertext,
+                                    const bytespan& assoc,
+                                    const enc_key& ekey,
+                                    const non_key& nonce)
+    {
+        if (ciphertext.size() < crypto_aead_chacha20poly1305_ietf_ABYTES)
+            return std::nullopt;
+        vkey plaintext (ciphertext.size() - crypto_aead_chacha20poly1305_ietf_ABYTES);
+        unsigned long long dlen = 0;
+        int r = crypto_aead_chacha20poly1305_ietf_decrypt(plaintext.data(),
+                                                            &dlen,
+                                                            nullptr,
+                                                            ciphertext.data(), ciphertext.size(),
+                                                            assoc.data(), assoc.size(),
+                                                            nonce.data(),
+                                                            ekey.data()
+                                                            );
+        if (r != 0)
+            return std::nullopt;
+
+        plaintext.resize(dlen);
+        return plaintext;
+    }
+    std::optional<vkey> decrypt(const bytespan& ciphertext, const bytespan& assoc, const key<32>& messageKey)
+    {
+        constexpr std::size_t EKB = sizeof(enc_key);
+        constexpr std::size_t NKB = sizeof(non_key);
+        constexpr std::size_t TKB = EKB + NKB;
+
+        auto okm = HKDF::expand<TKB>(messageKey, SP_INFO_STRING);
+
+        return decrypt(ciphertext, assoc, util::kcpy<EKB>(okm), util::kcpy<NKB>(okm, EKB));
     }
 }

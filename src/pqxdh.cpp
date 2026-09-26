@@ -16,29 +16,29 @@ namespace gcrypt::pqxdh
         auto QuantumPreKeyResult = keygen::MLKEM_32::make_id_pair();
         if (!QuantumPreKeyResult.has_value()) throw keygen::descriptive_error(QuantumPreKeyResult.error());
 
-        std::unordered_map<uint32_t, xckeypair> OneTimePreKeys;
+        std::unordered_map<uint32_t, xcikeypair> OneTimePreKeys;
         OneTimePreKeys.reserve(GCRYPT_INITIAL_PREKEY_BUNDLE_COUNT);
 
         for(int i = 0; i < GCRYPT_INITIAL_PREKEY_BUNDLE_COUNT; i++)
         {
-            auto KeyPairResult = keygen::X25519::make_pair();
+            auto KeyPairResult = keygen::X25519::make_id_pair();
             if (!KeyPairResult.has_value()) throw keygen::descriptive_error(KeyPairResult.error());
 
             auto val = KeyPairResult.value();
 
-            OneTimePreKeys.insert({util::keyid(val.Public), val});
+            OneTimePreKeys.insert({util::keyid(val.Public.data), val});
         }
 
-        std::unordered_map<uint32_t, qkeypair> OneTimeQuantumKeys;
+        std::unordered_map<uint32_t, qikeypair> OneTimeQuantumKeys;
         OneTimeQuantumKeys.reserve(GCRYPT_INITIAL_PREKEY_BUNDLE_COUNT);
 
         for(int i = 0; i < GCRYPT_INITIAL_PREKEY_BUNDLE_COUNT; i++)
         {
-            auto KeyPairResult = keygen::MLKEM_32::make_pair();
+            auto KeyPairResult = keygen::MLKEM_32::make_id_pair();
             if (!KeyPairResult.has_value()) throw keygen::descriptive_error(KeyPairResult.error());
 
             auto val = KeyPairResult.value();
-            OneTimeQuantumKeys.insert({util::keyid(val.Public), val});
+            OneTimeQuantumKeys.insert({util::keyid(val.Public.data), val});
         }
 
     #ifndef GCRYPT_NOSTORE
@@ -86,7 +86,7 @@ namespace gcrypt::pqxdh
 
             payload.oneTimePreKeys.push_back(xcikey
             {
-                .key        = x_pair.Public,
+                .data        = x_pair.Public,
                 .identifier = x_id
             });
 
@@ -106,7 +106,7 @@ namespace gcrypt::pqxdh
             const key<64> Z_N = keygen::random<64>();
 
             qsidkey _qsidkey{};
-            _qsidkey.key        = q_pair.Public;
+            _qsidkey.data        = q_pair.Public;
             _qsidkey.identifier = q_id;
             _qsidkey.signature  = XedDSA::sign32(privIdentityKey, q_pair.Public, Z_N);
 
@@ -120,12 +120,12 @@ namespace gcrypt::pqxdh
         if (!util::kmatch(userIdentityKey, bundle.identityKey))
             return false;
 
-        if (!XedDSA::verify32(userIdentityKey, bundle.signedPreKey.key, bundle.signedPreKey.signature))
+        if (!XedDSA::verify32(userIdentityKey, bundle.signedPreKey.data, bundle.signedPreKey.signature))
             return false;
 
         // only check signature if it is qsidkey
         if (const auto* signedQKey = std::get_if<qsidkey>(&bundle.qpubsidkey))
-            if (!XedDSA::verify32(userIdentityKey, signedQKey->key, signedQKey->signature))
+            if (!XedDSA::verify32(userIdentityKey, signedQKey->data, signedQKey->signature))
                 return false;
                 
         return true;
@@ -148,19 +148,19 @@ namespace gcrypt::pqxdh
 
         const MLKEM_32::kem_keypair PQPK = MLKEM_32::encapsulate(
             keys.qpubsidkey.index() == 0 ?
-                std::get<0>(keys.qpubsidkey).key :
-                std::get<1>(keys.qpubsidkey).key
+                std::get<0>(keys.qpubsidkey).data :
+                std::get<1>(keys.qpubsidkey).data
             );
         
-        const xckey DH_1 = X25519::ssecret(localIdentityKey.Private, keys.signedPreKey.key),
+        const xckey DH_1 = X25519::ssecret(localIdentityKey.Private, keys.signedPreKey.data),
                     DH_2 = X25519::ssecret(EK.Private, keys.identityKey),
-                    DH_3 = X25519::ssecret(EK.Private, keys.signedPreKey.key);
+                    DH_3 = X25519::ssecret(EK.Private, keys.signedPreKey.data);
         key<32> SK;
         try{
             // use pre key in signing
             if (keys.oneTimePreKey.has_value())
             {
-                const xckey DH_4 = X25519::ssecret(EK.Private, keys.oneTimePreKey->key);
+                const xckey DH_4 = X25519::ssecret(EK.Private, keys.oneTimePreKey->data);
                 auto input = util::kconcat(DH_1, DH_2, DH_3, DH_4, PQPK.sharedSecret);
                 SK = HKDF::KDF<32>(input);
             }
@@ -182,7 +182,7 @@ namespace gcrypt::pqxdh
                                                 SK, keys);
     }
 
-    std::optional<store::messaging_session> create_inbound_session(
+    std::optional<session::messaging_session> create_inbound_session(
                         const xckeypair&                     localIdentityKey,
                         const xckey&                         usedPrivateSignedPreKey,
                         const std::optional<xckey>&          usedPrivateOneTimePreKey,
@@ -212,15 +212,10 @@ namespace gcrypt::pqxdh
         }catch(const std::runtime_error& HKDF_extract_error)
         { return std::nullopt; }
 
-        // 4. Initialize Bob's Double Ratchet session
-        store::messaging_session session{};
-        session.remoteIdentityKey = handshake.identityKey;
-        session.remoteRatchetKey  = handshake.ephermoralKey; // Initial receiving ratchet key
-        session.rootKey           = extract;                 // Derived Master Root Key
-
-        return session;
+        // Initialize Double Ratchet session and return
+        return session::messaging_session(handshake.identityKey, handshake.ephermoralKey, extract);
     }
-    std::optional<store::messaging_session> create_inbound_session(const initial_message_handshake& handshake)
+    std::optional<session::messaging_session> create_inbound_session(const initial_message_handshake& handshake)
     {
         GCRYPT_ASSERT_STORE();
     #ifndef GCRYPT_NOSTORE

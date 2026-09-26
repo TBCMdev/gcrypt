@@ -42,8 +42,8 @@ namespace gcrypt::pqxdh
         xcikeypair             SignedPreKey;
         qikeypair              QuantumPreKey;
 
-        std::unordered_map<uint32_t, xckeypair> OneTimePreKeys;
-        std::unordered_map<uint32_t, qkeypair>  OneTimeQuantumKeys;
+        std::unordered_map<uint32_t, xcikeypair> OneTimePreKeys;
+        std::unordered_map<uint32_t, qikeypair>  OneTimeQuantumKeys;
     };
 
     /// @brief Represents all information that is retrieved from a foreign source about a recipient
@@ -73,7 +73,7 @@ namespace gcrypt::pqxdh
 
     struct session_init_result
     {
-        store::messaging_session session;
+        session::messaging_session session;
         initial_message_handshake handshakeMessage;
     };
 
@@ -115,18 +115,9 @@ namespace gcrypt::pqxdh
                 .usedQuantumPreKeys = std::move(usedQuantumPreKeys)
             };
 
-            store::messaging_session session
-            {
-                // TODO
-
-                .remoteIdentityKey = keys.identityKey,
-                .rootKey = KDFSecretKey,
-                .sendSequence = 0
-            };
-
             return session_init_result
             {
-                .session = std::move(session),
+                .session = session::messaging_session(keys.identityKey, keys.signedPreKey, KDFSecretKey),
                 .handshakeMessage = std::move(handshake)
             };
         }
@@ -162,21 +153,21 @@ namespace gcrypt::pqxdh
         
         for (std::size_t i = 0; i < _OneTimePreKeyCount; i++)
         {
-            const auto& okey = keys.OneTimePreKeys[i];
+            const auto& okey = keys.OneTimePreKeys.at(i);
             pOtpk[i] = xcikey
             {
-                .key        = okey.Public,
-                .identifier = okey.identifier,
+                .data        = okey.Public,
+                .identifier  = okey.Public.identifier,
             };
 
-            const auto& qkey = keys.OneTimeQuantumKeys[i];
+            const auto& qkey = keys.OneTimeQuantumKeys.at(i);
             const key<64> Z_N   = keygen::random<64>();
 
             pOtQpk[i] = qsidkey
             {
-                .key        = qkey.Public,
-                .identifier = qkey.identifier,
-                .signature  = XedDSA::sign32(keys.IdentityKey.Private, qkey.Public, Z_N)
+                .data       = qkey.Public,
+                .identifier = qkey.Public.identifier,
+                .signature  = XedDSA::sign32(keys.IdentityKey.Private, qkey.Public.data, Z_N)
             };
         }
 
@@ -188,17 +179,17 @@ namespace gcrypt::pqxdh
             .identityKey    = keys.IdentityKey.Public,
             .signedPreKey   = xcsikey 
                             {
-                                .key         = keys.SignedPreKey.Public,
+                                .data        = keys.SignedPreKey.Public,
                                 .identifier  = keys.SignedPreKey.Public.identifier,
-                                .signature   = XedDSA::sign32(keys.IdentityKey.Private, keys.SignedPreKey.Public, Z_SPK)
-                            }
+                                .signature   = XedDSA::sign32(keys.IdentityKey.Private, keys.SignedPreKey.Public.data, Z_SPK)
+                            },
             .quantumPreKey  = qpubsidkey 
                             {
-                                .key         = keys.SignedPreKey.Public,
+                                .data        = keys.SignedPreKey.Public,
                                 .identifier  = keys.SignedPreKey.Public.identifier,
-                                .signature   = XedDSA::sign32(keys.IdentityKey.Private, keys.QuantumPreKey.Public, Z_PQSPK)
-                            }
-            .oneTimePreKeys              = pOtpk
+                                .signature   = XedDSA::sign32(keys.IdentityKey.Private, keys.QuantumPreKey.Public.data, Z_PQSPK)
+                            },
+            .oneTimePreKeys              = pOtpk,
             .signedOneTimeQuantumPreKeys = pOtQpk
         };
     }
@@ -223,11 +214,11 @@ namespace gcrypt::pqxdh
     /// @param handshake The incoming handshake
     /// @return The session if it was created.
 GCRYPT_FUNC_USES_STORAGE
-    std::optional<store::messaging_session> create_inbound_session(const initial_message_handshake& handshake);
+    std::optional<session::messaging_session> create_inbound_session(const initial_message_handshake& handshake);
     /// @brief Attempts to create a session from an inbound initial_message_handshake object.
     /// @note This function does not query storage to fetch the used private keys, as they are passed as arguments.
     /// @return The session if it was created.
-    std::optional<store::messaging_session> create_inbound_session(
+    std::optional<session::messaging_session> create_inbound_session(
                                     const xckeypair&                     localIdentityKey,
                                     const xckey&                         usedPrivateSignedPreKey,
                                     const std::optional<xckey>&          usedPrivateOneTimePreKey,

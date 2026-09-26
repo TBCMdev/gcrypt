@@ -25,8 +25,8 @@ namespace gcrypt::keygen
                 > X25519::make_id_pair()
     {
         xcikeypair out{};
-        crypto_box_keypair(out.Public.key.data(), out.Private.data());
-        out.Public.identifier = util::keyid(out.Public.key);
+        crypto_box_keypair(out.Public.data.data(), out.Private.data());
+        out.Public.identifier = util::keyid(out.Public.data);
         return out;
     }
     std::expected
@@ -47,8 +47,8 @@ namespace gcrypt::keygen
                 > Ed25519::make_id_pair()
     {
         edikeypair out{};
-        crypto_box_keypair(out.Public.key.data(), out.Private.data());
-        out.Public.identifier = util::keyid(out.Public.key);
+        crypto_box_keypair(out.Public.data.data(), out.Private.data());
+        out.Public.identifier = util::keyid(out.Public.data);
 
         return out;
     }
@@ -74,7 +74,7 @@ namespace gcrypt::keygen
     {
         qikeypair out{};
 
-        if (mlkimpl_keypair(out.Public.key.data(), out.Private.data()) != 0)
+        if (mlkimpl_keypair(out.Public.data.data(), out.Private.data()) != 0)
             return std::unexpected(KeyGenError::LIBRARY_ERROR);
         return out;
     }

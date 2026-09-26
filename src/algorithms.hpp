@@ -4,6 +4,7 @@
 #include "hashing.hpp"
 #include "keygen.hpp"
 #include <stdexcept>
+#include <tuple>
 
 namespace gcrypt
 {
@@ -164,6 +165,10 @@ namespace gcrypt
             // OKM = HKDF-Expand(PRK, info, OutputSize)
             return expand<_OutputSize>(prk, appDomainInfo);
         }
+        /// @brief Implements the KDF_RK(KM) implementation found at https://signal.org/docs/specifications/doubleratchet/
+        /// @throws std::runtime_error - if the extract failed.
+        /// @note  uses the implementation defined for curve 25519.
+        std::tuple<xckey, xckey> KDF_rk(const xckey& rk, const xckey& dhOut, const std::string_view appDomainInfo = "WhisperRatchet");
     }
     namespace MLKEM_32
     {
@@ -189,6 +194,28 @@ namespace gcrypt
     /// @brief The aead algorithm used in the protocol.
     namespace AEAD
     {
-        
+        using enc_key = bytekey<crypto_aead_chacha20poly1305_ietf_KEYBYTES>;
+        using non_key = bytekey<crypto_aead_chacha20poly1305_ietf_NPUBBYTES>;
+
+        vkey encrypt(const bytespan& plaintext,
+                    const bytespan& assoc,
+                    const enc_key& ekey,
+                    const non_key& nonce);
+                    
+        vkey encrypt(const bytespan& plaintext,
+                     const bytespan& assoc,
+                     const key<32> messageKey);
+
+
+        std::optional<vkey> decrypt(const bytespan& ciphertext,
+                                    const bytespan& assoc,
+                                    const enc_key& ekey,
+                                    const non_key& nonce);
+        std::optional<vkey> decrypt(const bytespan& ciphertext,
+                                    const bytespan& assoc,
+                                    const key<32>& messageKey);
+
+
     }
+
 };

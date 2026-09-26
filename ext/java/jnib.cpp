@@ -175,7 +175,7 @@ namespace gcrypt::jniOM::to
         // 2. Signed PreKey (xcsikey = sidkey<32, 64>)
         jobject jSignedPreKey = env->GetObjectField(foreignBundle, fid_signedPreKey);
         auto signedPreKeyOpt  = to_sid_key<
-            sizeof(decltype(gcrypt::xcsikey::key)), 
+            sizeof(decltype(gcrypt::xcsikey::data)), 
             sizeof(decltype(gcrypt::xcsikey::signature))
         >(JNI_CONTEXT, jSignedPreKey);
 

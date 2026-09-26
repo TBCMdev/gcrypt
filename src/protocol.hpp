@@ -10,12 +10,14 @@
 #include <span>
 #include <sodium.h>
 
-#define GCRYPT_VERSION_STRING "0.0.1"
+#ifndef GCRYPT_VERSION_STRING
+    #define GCRYPT_VERSION_STRING "0.0.1"
+#endif
 #define GCRYPT_X25519_KEY_SIZE 32
 #define GCRYPT_HASH_SIZE 512
 #define GCRYPT_SIGNATURE_SIZE 64
-#define GCRYPT_INFO "gecko-protocol-" GCRYPT_VERSION_STRING
-
+#define GCRYPT_INFO "gcrypt-protocol-" GCRYPT_VERSION_STRING
+#define SP_INFO_STRING "gcrypt-protocol-v1"
 extern "C"
 {
     
@@ -121,8 +123,11 @@ namespace gcrypt
     template<std::size_t _Bytes>
     struct idkey
     {
-        key<_Bytes> key;
+        key<_Bytes> data;
         uint32_t    identifier;
+
+        operator key<_Bytes>&() { return data; }
+        operator const key<_Bytes>&() const { return data; }
     };
     /// @brief An identifiable key of length _Bytes with a signature of _SigBytes = _Bytes.
     template<std::size_t _Bytes, std::size_t _SigBytes = _Bytes>

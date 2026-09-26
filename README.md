@@ -78,3 +78,18 @@ For people using gcrypt for a complete signal implementation, they should not de
 #### `MLK_CONFIG_PARAMETER_SET`
 
 Defines the size of the post quantum keys to generate via the MLK algorithm.
+
+#### `GCRYPT_EXPOSE`
+
+Exposes internal object method implementations by changing their visibility from `private`/`protected` to `public`.
+
+This macro exists to initially prohibit misuse of these functions, and to entice the use of higher level functions
+for interacting with the protocol implementation.
+
+If this macro is set, lower level and more detailed functions will be exposed to allow direct invocation from
+object instances, and in some cases remove a privatized prefix from method names (Like double underscore in other languages).
+
+Some exposed methods are implementation methods and do not retain sufficient documentation, therefore needing a deeper understanding
+of the underlying implementations before using them.
+
+Otherwise, these methods remain hidden, usually defined as `protected`. This means that for the most part, you can inherit and overload these methods, regardless of this macro.

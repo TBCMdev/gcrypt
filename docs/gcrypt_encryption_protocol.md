@@ -1,6 +1,6 @@
 # The Gcrypt Encryption Protocol
 
-The Gcrypt Encryption Protocol relies on the latest versiopn of [Gcrypt](https://github.com/TBCMDev/gcrypt).
+The Gcrypt Encryption Protocol relies on the latest version of [Gcrypt](https://github.com/TBCMDev/gcrypt).
 
 > If you're having trouble with the API, you can have a look at the cross platform support in Gcrypt, which offers JNI (Java/Kotlin) and webassembly support currently. These are wrapper implementations that provide more examples as to how the functions should be implemented.
 
