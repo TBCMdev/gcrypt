@@ -1,5 +1,6 @@
 #pragma once
 #include <expected>
+#include <algorithm>
 
 #include "protocol.hpp"
 

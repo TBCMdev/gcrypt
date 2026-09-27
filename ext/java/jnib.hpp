@@ -39,7 +39,7 @@
 
 #pragma region JNI_InbuildMappings
     #define JNI_CONSTRUCTOR_NAME "<init>"
-    #define JAVA_LANG_PACKAGE    "java/lang/"
+    #define JAVA_LANG_PACKAGE    "java/util/"
 
     #define JAVA_OBJECT_NAME     "Object"
     #define JAVA_OBJECT_PATH     JAVA_LANG_PACKAGE JAVA_OBJECT_NAME
@@ -120,30 +120,6 @@ namespace gcrypt::jniOM::from
 
         jbyteArray pubArray = key(JNI_CONTEXT, k.Public);
         jbyteArray privArray = key(JNI_CONTEXT, k.Private);
-
-        jobject keyPairObj = env->NewObject(clazz, constructor, pubArray, privArray);
-
-        env->DeleteLocalRef(pubArray);
-        env->DeleteLocalRef(privArray);
-        env->DeleteLocalRef(clazz);
-
-        return keyPairObj;
-    }
-
-    template<std::size_t _BytesPublic,
-             std::size_t _BytesPrivate,
-             template<std::size_t> class _PublicKeyType = gcrypt::key,
-             template<std::size_t> class _PrivateKeyType = _PublicKeyType
-            >
-    jobject key_pair(JNI_PCONTEXT, const gcrypt::_keypair_impl<_PublicKeyType, _PrivateKeyType, _BytesPublic, _BytesPrivate>& k)
-    {
-        const jclass clazz = env->FindClass(JNI_key_pair_CLASSNAME_MAPPING);
-        if (!clazz) return nullptr;
-
-        jmethodID constructor = env->GetMethodID(clazz, JNI_CONSTRUCTOR_NAME, JNI_key_pair_CONSTRUCTOR_SIG);
-
-        jbyteArray pubArray = key(JNI_CONTEXT, static_cast<const gcrypt::key<_BytesPublic>&>(k.Public));
-        jbyteArray privArray = key(JNI_CONTEXT, static_cast<const gcrypt::key<_BytesPrivate>&>(k.Private));
 
         jobject keyPairObj = env->NewObject(clazz, constructor, pubArray, privArray);
 
