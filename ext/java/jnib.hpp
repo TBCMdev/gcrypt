@@ -19,7 +19,7 @@
 
 #define GCRYPT_JNI_FUNC_SIG(ret, cpp_structure_equivalent) extern "C" JNIEXPORT ret JNICALL
 
-#define GCRYPT_LIB_JNI_FUNC(name) GCRYPT_JAVA##GCRYPT_PACKAGE_NAME ##_name
+#define GCRYPT_LIB_JNI_FUNC(_name) GCRYPT_JAVA ## GCRYPT_PACKAGE_NAME ## _name
 
 #define JNI_ENV_NAME env
 #define JNI_INSTANCE_NAME instance
@@ -130,6 +130,30 @@ namespace gcrypt::jniOM::from
         return keyPairObj;
     }
 
+    template<std::size_t _BytesPublic,
+             std::size_t _BytesPrivate,
+             template<std::size_t> class _PublicKeyType = gcrypt::key,
+             template<std::size_t> class _PrivateKeyType = _PublicKeyType
+            >
+    jobject key_pair(JNI_PCONTEXT, const gcrypt::_keypair_impl<_PublicKeyType, _PrivateKeyType, _BytesPublic, _BytesPrivate>& k)
+    {
+        const jclass clazz = env->FindClass(JNI_key_pair_CLASSNAME_MAPPING);
+        if (!clazz) return nullptr;
+
+        jmethodID constructor = env->GetMethodID(clazz, JNI_CONSTRUCTOR_NAME, JNI_key_pair_CONSTRUCTOR_SIG);
+
+        jbyteArray pubArray = key(JNI_CONTEXT, static_cast<const gcrypt::key<_BytesPublic>&>(k.Public));
+        jbyteArray privArray = key(JNI_CONTEXT, static_cast<const gcrypt::key<_BytesPrivate>&>(k.Private));
+
+        jobject keyPairObj = env->NewObject(clazz, constructor, pubArray, privArray);
+
+        env->DeleteLocalRef(pubArray);
+        env->DeleteLocalRef(privArray);
+        env->DeleteLocalRef(clazz);
+
+        return keyPairObj;
+    }
+
     template<std::size_t _Bytes>
     jobject id_key(JNI_PCONTEXT, const gcrypt::idkey<_Bytes>& k)
     {
@@ -138,7 +162,7 @@ namespace gcrypt::jniOM::from
 
         jmethodID constructor = env->GetMethodID(clazz, JNI_CONSTRUCTOR_NAME, JNI_id_key_CONSTRUCTOR_SIG);
 
-        jbyteArray keyArray = key(JNI_CONTEXT, k.key);
+        jbyteArray keyArray = key(JNI_CONTEXT, k.data);
         jint id = static_cast<jint>(k.identifier);
 
         jobject idKeyObj = env->NewObject(clazz, constructor, keyArray, id);
@@ -157,7 +181,7 @@ namespace gcrypt::jniOM::from
 
         jmethodID constructor = env->GetMethodID(clazz, JNI_CONSTRUCTOR_NAME, JNI_sid_key_CONSTRUCTOR_SIG);
 
-        jbyteArray keyArray = key(JNI_CONTEXT, k.key);
+        jbyteArray keyArray = key(JNI_CONTEXT, k.data);
         jint id = static_cast<jint>(k.identifier);
         jbyteArray sigArray = key(JNI_CONTEXT, k.signature);
 
@@ -168,6 +192,39 @@ namespace gcrypt::jniOM::from
         env->DeleteLocalRef(clazz);
 
         return sidKeyObj;
+    }
+
+    template<std::size_t _BytesPublic, 
+             std::size_t _BytesPrivate,
+             template<std::size_t> class _PublicKeyType = gcrypt::key,
+             template<std::size_t> class _PrivateKeyType = _PublicKeyType>
+    jobject key_pair_map(JNI_PCONTEXT, const std::unordered_map<uint32_t, gcrypt::_keypair_impl<_PublicKeyType, _PrivateKeyType, _BytesPublic, _BytesPrivate>>& _map)
+    {
+        jclass hashMapClass = env->FindClass(JNI_INBUILT_hashmap_CLASSNAME_MAPPING);
+        if (!hashMapClass) return nullptr;
+
+        jmethodID constructor = env->GetMethodID(hashMapClass, JNI_CONSTRUCTOR_NAME, JNI_EMPTY_CONSTRUCTOR_SIG);
+        jobject hashmap       = env->NewObject(hashMapClass, constructor);
+
+        jmethodID putMethod   = env->GetMethodID(hashMapClass, "put", JNI_INBUILD_hashmap_put_METHOD_SIG);
+
+        jclass integerClass = env->FindClass("java/lang/Integer");
+        jmethodID intValueOf = env->GetStaticMethodID(integerClass, "valueOf", "(I)Ljava/lang/Integer;");
+
+        for (const auto& [k, val] : _map)
+        {
+            jobject ckeyObj = env->CallStaticObjectMethod(integerClass, intValueOf, static_cast<jint>(k));
+            jobject cval = key_pair(JNI_CONTEXT, val);
+
+            env->CallObjectMethod(hashmap, putMethod, ckeyObj, cval);
+
+            env->DeleteLocalRef(ckeyObj);
+            env->DeleteLocalRef(cval);
+        }
+        
+        env->DeleteLocalRef(integerClass);
+        env->DeleteLocalRef(hashMapClass);
+        return hashmap;
     }
 
     // =========================================================================
@@ -246,31 +303,6 @@ namespace gcrypt::jniOM::from
 
         env->DeleteLocalRef(elemClazz);
         return array;
-    }
-
-    template<std::size_t _BytesPublic, std::size_t _BytesPrivate>
-    jobject key_pair_map(JNI_PCONTEXT, const std::unordered_map<uint32_t, gcrypt::ukeypair<_BytesPublic, _BytesPrivate>>& _map)
-    {
-        jclass hashMapClass = env->FindClass(JNI_INBUILT_hashmap_CLASSNAME_MAPPING);
-        if (!hashMapClass) return nullptr;
-
-        jmethodID constructor = env->GetMethodID(hashMapClass, JNI_CONSTRUCTOR_NAME, JNI_EMPTY_CONSTRUCTOR_SIG);
-        jobject hashmap       = env->NewObject(hashMapClass, constructor);
-
-        jmethodID putMethod   = env->GetMethodID(hashMapClass, "put", JNI_INBUILD_hashmap_put_METHOD_SIG);
-
-        for (const auto& [k, val] : _map)
-        {
-            const jint ckey    = static_cast<jint>(k);
-            const jobject cval = key_pair(JNI_CONTEXT, val);
-
-            env->CallObjectMethod(hashmap, putMethod, ckey, cval);
-
-            env->DeleteLocalRef(cval);
-        }
-
-        env->DeleteLocalRef(hashMapClass);
-        return hashmap;
     }
 
     // =========================================================================
@@ -455,17 +487,17 @@ namespace gcrypt::jniOM::to
         jbyteArray jkey = static_cast<jbyteArray>(env->GetObjectField(obj, fid_key));
         jint id = env->GetIntField(obj, fid_id);
 
-        auto kOpt = key<_Bytes>(JNI_CONTEXT, jkey);
+        auto kOpt = to_key<_Bytes>(JNI_CONTEXT, jkey);
 
         if (jkey) env->DeleteLocalRef(jkey);
         env->DeleteLocalRef(clazz);
 
         if (!kOpt) return std::nullopt;
 
-        return gcrypt::idkey<_Bytes>{
-            .key        = *kOpt,
-            .identifier = static_cast<uint32_t>(id)
-        };
+        gcrypt::idkey<_Bytes> ret;
+        ret.data = *kOpt;
+        ret.identifier = static_cast<uint32_t>(id);
+        return ret;
     }
 
     template<std::size_t _Bytes, std::size_t _SigBytes>
@@ -482,8 +514,8 @@ namespace gcrypt::jniOM::to
         jint id         = env->GetIntField(obj, fid_id);
         jbyteArray jsig = static_cast<jbyteArray>(env->GetObjectField(obj, fid_sig));
 
-        auto kOpt   = key<_Bytes>(JNI_CONTEXT, jkey);
-        auto sigOpt = key<_SigBytes>(JNI_CONTEXT, jsig);
+        auto kOpt   = to_key<_Bytes>(JNI_CONTEXT, jkey);
+        auto sigOpt = to_key<_SigBytes>(JNI_CONTEXT, jsig);
 
         if (jkey) env->DeleteLocalRef(jkey);
         if (jsig) env->DeleteLocalRef(jsig);
@@ -491,11 +523,11 @@ namespace gcrypt::jniOM::to
 
         if (!kOpt || !sigOpt) return std::nullopt;
 
-        return gcrypt::sidkey<_Bytes, _SigBytes>{
-            .key        = *kOpt,
-            .identifier = static_cast<uint32_t>(id),
-            .signature  = *sigOpt
-        };
+        gcrypt::sidkey<_Bytes, _SigBytes> ret;
+        ret.data = *kOpt;
+        ret.identifier = static_cast<uint32_t>(id);
+        ret.signature = *sigOpt;
+        return ret;
     }
     
 }

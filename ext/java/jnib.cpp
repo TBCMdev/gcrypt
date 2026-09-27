@@ -69,7 +69,7 @@ namespace gcrypt::jniOM::from
     }
     jobject messaging_session(
             JNI_PCONTEXT, 
-            const store::messaging_session& session)
+            const session::messaging_session& session)
     {
         return nullptr;
 
@@ -202,7 +202,7 @@ namespace gcrypt::jniOM::to
 
         if (isSidKey) {
             auto qSidOpt = to_sid_key<
-                sizeof(decltype(gcrypt::qsidkey::key)), 
+                sizeof(decltype(gcrypt::qsidkey::data)), 
                 sizeof(decltype(gcrypt::qsidkey::signature))
             >(JNI_CONTEXT, jQuantumKey);
 
@@ -214,7 +214,7 @@ namespace gcrypt::jniOM::to
             quantumPreKey = *qSidOpt;
         } 
         else {
-            auto qIdOpt = to_id_key<sizeof(decltype(gcrypt::qpubikey::key))>(JNI_CONTEXT, jQuantumKey);
+            auto qIdOpt = to_id_key<sizeof(decltype(gcrypt::qpubikey::data))>(JNI_CONTEXT, jQuantumKey);
 
             if (!qIdOpt) {
                 env->DeleteLocalRef(jQuantumKey);
@@ -230,7 +230,7 @@ namespace gcrypt::jniOM::to
         std::optional<gcrypt::xcikey> oneTimePreKeyOpt;
 
         if (jOneTimePreKey) {
-            oneTimePreKeyOpt = to_id_key<sizeof(decltype(gcrypt::xcikey::key))>(JNI_CONTEXT, jOneTimePreKey);
+            oneTimePreKeyOpt = to_id_key<sizeof(decltype(gcrypt::xcikey::data))>(JNI_CONTEXT, jOneTimePreKey);
             env->DeleteLocalRef(jOneTimePreKey);
         }
 
@@ -342,7 +342,7 @@ GCRYPT_LIB_JNI_FUNC(refill)(JNI_ENTRY_PCONTEXT, jint numKeys)
 
 
 // =============================================================================
-// 1. New Session (TOFU / First-time contact)
+// 1. New Session (First-time contact)
 // =============================================================================
 /// @brief Attempts to make a new session message handshake 
 ///        given the foreign bundle received by the server.
@@ -415,6 +415,7 @@ GCRYPT_LIB_JNI_FUNC(initializeExistingSession)(
 // =============================================================================
 // 3. Processing Incoming Handshake (Bob / Recipient side)
 // =============================================================================
+/// @brief Attempts to make a new session from the initial handshape received from a user.
 GCRYPT_JNI_FUNC_SIG(jobject, gcrypt::gcrypt_messaging_session)
 GCRYPT_LIB_JNI_FUNC(handleInitialHandshake)(
     JNI_ENTRY_PCONTEXT,
@@ -428,11 +429,216 @@ GCRYPT_LIB_JNI_FUNC(handleInitialHandshake)(
         return nullptr;
     }
 
-    // 1. Look up Bob's matching private keys using handshakeMsg->usedPreKeys / usedQuantumPreKeys
-    // 2. Perform DH decapsulation using Alice's EKA and IK_A
-    // 3. Derive Bob's matching Master Secret
+    auto session = create_inbound_session(*handshakeMsg);
+    if (!session.has_value())
+        return nullptr;
+    return gcrypt::jniOM::from::messaging_session(JNI_CONTEXT, *session);
+}
+
+
+// =============================================================================
+// Storage Manager JNI Wrappers
+// =============================================================================
+
+/// @brief Stores a session blob mapped to a specific recipient ID.
+GCRYPT_JNI_FUNC_SIG(jboolean, bool)
+GCRYPT_LIB_JNI_FUNC(storeSession)(JNI_ENTRY_PCONTEXT, jstring recipientId, jbyteArray sessionBlob)
+{
+    if (!GCRYPT_ISTORE || !recipientId || !sessionBlob)
+        return JNI_FALSE;
+
+    const char* c_recipient = env->GetStringUTFChars(recipientId, nullptr);
+    std::string recipient(c_recipient);
+    env->ReleaseStringUTFChars(recipientId, c_recipient);
+
+    jsize len = env->GetArrayLength(sessionBlob);
+    std::vector<uint8_t> blob(len);
+    env->GetByteArrayRegion(sessionBlob, 0, len, reinterpret_cast<jbyte*>(blob.data()));
+
+    bool result = GCRYPT_ISTORE->store_session(recipient, blob);
+    return result ? JNI_TRUE : JNI_FALSE;
+}
+
+/// @brief Loads a session mapped to the given recipient ID and converts it to a Java GcryptMessagingSession.
+GCRYPT_JNI_FUNC_SIG(jobject, gcrypt::session::messaging_session)
+GCRYPT_LIB_JNI_FUNC(loadSession)(JNI_ENTRY_PCONTEXT, jstring recipientId)
+{
+    if (!GCRYPT_ISTORE || !recipientId)
+        return nullptr;
+
+    const char* c_recipient = env->GetStringUTFChars(recipientId, nullptr);
+    std::string recipient(c_recipient);
+    env->ReleaseStringUTFChars(recipientId, c_recipient);
+
+    auto sessionOpt = GCRYPT_ISTORE->load_session(recipient);
+    if (!sessionOpt.has_value())
+        return nullptr;
+
+    return gcrypt::jniOM::from::messaging_session(JNI_CONTEXT, sessionOpt.value());
+}
+
+/// @brief Closes/frees the session mapped to the recipient ID.
+GCRYPT_JNI_FUNC_SIG(void, void)
+GCRYPT_LIB_JNI_FUNC(closeSession)(JNI_ENTRY_PCONTEXT, jstring recipientId)
+{
+    if (!GCRYPT_ISTORE || !recipientId)
+        return;
+
+    const char* c_recipient = env->GetStringUTFChars(recipientId, nullptr);
+    std::string recipient(c_recipient);
+    env->ReleaseStringUTFChars(recipientId, c_recipient);
+
+    GCRYPT_ISTORE->close_session(recipient);
+}
+
+/// @brief Stores a one-time prekey blob into storage using the identifier and key type.
+GCRYPT_JNI_FUNC_SIG(jboolean, bool)
+GCRYPT_LIB_JNI_FUNC(storeOneTimePreKey)(JNI_ENTRY_PCONTEXT, jint id, jint keyType, jbyteArray keyBlob)
+{
+    if (!GCRYPT_ISTORE || !keyBlob)
+        return JNI_FALSE;
+
+    jsize len = env->GetArrayLength(keyBlob);
+    std::vector<uint8_t> blob(len);
+    env->GetByteArrayRegion(keyBlob, 0, len, reinterpret_cast<jbyte*>(blob.data()));
+
+    gcrypt::store::key_type kType = static_cast<gcrypt::store::key_type>(keyType);
+
+    bool result = GCRYPT_ISTORE->store_one_time_prekey(
+        static_cast<GCRYPT_KEY_MANAGER_INDEX_TYPE>(id),
+        kType,
+        blob
+    );
+    return result ? JNI_TRUE : JNI_FALSE;
+}
+
+/// @brief Stores the user's primary identity key pair blob.
+GCRYPT_JNI_FUNC_SIG(jboolean, bool)
+GCRYPT_LIB_JNI_FUNC(storeIdentityKeyPair)(JNI_ENTRY_PCONTEXT, jbyteArray ikPairBlob)
+{
+    if (!GCRYPT_ISTORE || !ikPairBlob)
+        return JNI_FALSE;
+
+    jsize len = env->GetArrayLength(ikPairBlob);
+    std::vector<uint8_t> blob(len);
+    env->GetByteArrayRegion(ikPairBlob, 0, len, reinterpret_cast<jbyte*>(blob.data()));
+
+    bool result = GCRYPT_ISTORE->store_identity_key_pair(blob);
+    return result ? JNI_TRUE : JNI_FALSE;
+}
+
+/// @brief Retrieves the user's primary identity key pair blob and returns it to Java as a byte array.
+GCRYPT_JNI_FUNC_SIG(jbyteArray, gcrypt::vkey)
+GCRYPT_LIB_JNI_FUNC(loadIdentityKeyPair)(JNI_ENTRY_PCONTEXT)
+{
+    if (!GCRYPT_ISTORE)
+        return nullptr;
+
+    auto keyOpt = GCRYPT_ISTORE->load_identity_key_pair();
+    if (!keyOpt.has_value())
+        return nullptr;
+
+    jbyteArray arr = env->NewByteArray(static_cast<jsize>(keyOpt.value().size()));
+    env->SetByteArrayRegion(arr, 0, static_cast<jsize>(keyOpt.value().size()), reinterpret_cast<const jbyte*>(keyOpt.value().data()));
+    return arr;
+}
+
+/// @brief Loads a specific one-time prekey mapped to the provided identifier and returns it as a byte array.
+GCRYPT_JNI_FUNC_SIG(jbyteArray, gcrypt::vkey)
+GCRYPT_LIB_JNI_FUNC(loadOneTimePreKey)(JNI_ENTRY_PCONTEXT, jint id, jint keyType)
+{
+    if (!GCRYPT_ISTORE)
+        return nullptr;
+
+    gcrypt::store::key_type kType = static_cast<gcrypt::store::key_type>(keyType);
+
+    auto keyOpt = GCRYPT_ISTORE->load_one_time_prekey(
+        static_cast<GCRYPT_KEY_MANAGER_INDEX_TYPE>(id),
+        kType
+    );
+    if (!keyOpt.has_value())
+        return nullptr;
+
+    jbyteArray arr = env->NewByteArray(static_cast<jsize>(keyOpt.value().size()));
+    env->SetByteArrayRegion(arr, 0, static_cast<jsize>(keyOpt.value().size()), reinterpret_cast<const jbyte*>(keyOpt.value().data()));
+    return arr;
+}
+
+/// @brief Deletes the prekey record associated with the given identifier.
+GCRYPT_JNI_FUNC_SIG(jboolean, bool)
+GCRYPT_LIB_JNI_FUNC(deleteOneTimePreKey)(JNI_ENTRY_PCONTEXT, jint id)
+{
+    if (!GCRYPT_ISTORE)
+        return JNI_FALSE;
+
+    bool result = GCRYPT_ISTORE->delete_one_time_prekey(static_cast<GCRYPT_KEY_MANAGER_INDEX_TYPE>(id));
+    return result ? JNI_TRUE : JNI_FALSE;
+}
+
+GCRYPT_JNI_FUNC_SIG(jbyteArray, char*)
+GCRYPT_LIB_JNI_FUNC(encryptTo)(JNI_ENTRY_PCONTEXT, jstring whoId, jbyteArray message)
+{
+    if (!GCRYPT_ISTORE)
+        return nullptr;
+    const char* who = env->GetStringUTFChars(whoId, nullptr);
+
+    auto session = GCRYPT_ISTORE->get_session(who);
     
-    // messaging_session bobSession = ...;
-    return nullptr;
-    // return gcrypt::jniOM::from::messaging_session(JNI_CONTEXT, bobSession);
+    if (!session)
+        return nullptr;
+    
+
+    jsize len = env->GetArrayLength(message);
+
+    jbyte* elements = env->GetByteArrayElements(message, nullptr);
+
+    gcrypt::bytespan msgSpan(reinterpret_cast<uint8_t*>(elements), static_cast<std::size_t>(len));
+
+    gcrypt::bytedata decrypted = (*session)->ratchet_encrypt(msgSpan);
+
+    env->ReleaseByteArrayElements(message, elements, JNI_ABORT);
+
+    jsize outLen = static_cast<jsize>(decrypted.size());
+    jbyteArray outArray = env->NewByteArray(outLen);
+
+    if (outArray != nullptr) {
+        env->SetByteArrayRegion(outArray, 0, outLen, reinterpret_cast<const jbyte*>(decrypted.data()));
+    }
+
+    return outArray;
+}
+GCRYPT_JNI_FUNC_SIG(jbyteArray, char*)
+GCRYPT_LIB_JNI_FUNC(decryptFrom)(JNI_ENTRY_PCONTEXT, jstring whoId, jbyteArray message)
+{
+    if (!GCRYPT_ISTORE)
+        return nullptr;
+    const char* who = env->GetStringUTFChars(whoId, nullptr);
+
+    auto session = GCRYPT_ISTORE->get_session(who);
+    
+    if (!session)
+        return nullptr;
+    
+
+    jsize len = env->GetArrayLength(message);
+
+    jbyte* elements = env->GetByteArrayElements(message, nullptr);
+
+    gcrypt::bytespan msgSpan(reinterpret_cast<uint8_t*>(elements), static_cast<std::size_t>(len));
+
+    auto decrypted = (*session)->ratchet_decrypt(msgSpan);
+
+    if (!decrypted.has_value())
+        return nullptr;
+
+    env->ReleaseByteArrayElements(message, elements, JNI_ABORT);
+
+    jsize outLen = static_cast<jsize>(decrypted->size());
+    jbyteArray outArray = env->NewByteArray(outLen);
+
+    if (outArray != nullptr) {
+        env->SetByteArrayRegion(outArray, 0, outLen, reinterpret_cast<const jbyte*>(decrypted->data()));
+    }
+
+    return outArray;
 }

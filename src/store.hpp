@@ -73,7 +73,15 @@ namespace gcrypt::store
             #else
                 = 0;
             #endif
-        
+        /// @brief Attempts to free the given session_blob from local memory with the given recipient_id as a mapped key.
+        /// @param recipient_id The identifier used to store this session. Something like "Alice:1".
+        /// @throws not_implemented - if no implementation for this function exists. This is default behavior.
+        inline virtual void close_session(const std::string& recipient_id)
+            #ifdef GCRYPT_NOSTORE
+                { GCRYPT_STORE_NOT_IMPLEMENTED; }
+            #else
+                = 0;
+            #endif
 
         /// @brief Attempts to store the given prekey bytes to the implementers storage with the given id to map it.
         /// @note Uses GCRYPT_KEY_MANAGER_INDEX_TYPE to determine the numeric data type used to index the key storage implementation.
@@ -135,7 +143,7 @@ namespace gcrypt::store
                 = 0;
             #endif
 
-
+        
         /// @brief Returns the cached session if an entry exists.
         /// @param recipient_id the key for this session
         /// @return The session reference (a shared ptr to the session), if a mapping exists
