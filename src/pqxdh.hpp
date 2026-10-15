@@ -185,8 +185,8 @@ namespace gcrypt::pqxdh
                             },
             .quantumPreKey  = qpubsidkey 
                             {
-                                .data        = keys.SignedPreKey.Public,
-                                .identifier  = keys.SignedPreKey.Public.identifier,
+                                .data        = keys.QuantumPreKey.Public,
+                                .identifier  = keys.QuantumPreKey.Public.identifier,
                                 .signature   = XedDSA::sign32(keys.IdentityKey.Private, keys.QuantumPreKey.Public.data, Z_PQSPK)
                             },
             .oneTimePreKeys              = pOtpk,

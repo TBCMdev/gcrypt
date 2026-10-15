@@ -3,6 +3,7 @@
 #include "store.hpp"
 #include "algorithms.hpp"
 #include <algorithm>
+#include <ranges>
 
 namespace gcrypt::session
 {
@@ -20,6 +21,138 @@ namespace gcrypt::session
         rootKey(masterSecretKey)
     {
         // master secret already derived and received.
+    }
+    util::convert_result<skipped_message_key> skipped_message_key::from_bytes(const fixed_bytespan& from)
+    {
+        if (from.size() < bytesize<skipped_message_key>())
+            return convert_error<fixed_bytespan, skipped_message_key>("Bytearray not long enough for sizeof(skipped_message_key)");
+        size_t offset = 0;
+
+        xckey rpk;
+        key<32> mk;
+        uint32_t sn;
+
+        const std::span<const uint8_t> span(from.begin(), from.end());
+
+        util::load_keyb(span, rpk, offset);
+        util::load_keyb(span, mk,  offset += sizeof(rpk));
+        std::memcpy(&sn,  span.data() + offset, sizeof(sn));
+
+        return skipped_message_key{rpk, mk, sn};
+    }
+
+    bytedata skipped_message_key::to_bytes() const
+    {
+        bytedata data;
+        data.reserve(bytesize<skipped_message_key>());
+
+        size_t off = util::write_key_bytes(data, 0, ratchetPublicKey, messageKey);
+        
+        std::ranges::copy(util::bytes(sequenceNumber), data.begin() + off);
+
+        return data;
+    }
+    util::convert_result<messaging_session> messaging_session::from_bytes(const fixed_bytespan& from)
+    {
+        if (from.size() < bytesize<messaging_session>())
+            return convert_error<fixed_bytespan, messaging_session>("Bytearray not long enough for sizeof(messaging_session).");
+
+        size_t offset = 0;
+
+        xckey rik;
+        key<32> rk, sck, rck;
+        xckeypair lrk;
+        xckey rrk;
+        uint32_t ss, rs, pcl;
+        size_t sc; // skipped count
+        std::vector<skipped_message_key> smks;
+
+        const std::span<const uint8_t> span(from.begin(), from.end());
+
+        // for security, we should use load_keyb_s (load key bytes safe) to zero the memory after loading from the span.
+        // however the current parent implementation expects a const span, so we cannot modify the data.
+        util::load_keyb(span, rik,         offset);
+        util::load_keyb(span, rk,          offset += sizeof(rik));
+        util::load_keyb(span, sck,         offset += sizeof(rk));
+        util::load_keyb(span, rck,         offset += sizeof(sck));
+        util::load_keyb(span, lrk.Public,  offset += sizeof(rck));
+        util::load_keyb(span, lrk.Private, offset += sizeof(lrk.Public));
+        util::load_keyb(span, rrk,         offset += sizeof(lrk.Private));
+        
+        offset += sizeof(lrk.Private);
+
+        std::memcpy(&ss,  span.data() + offset, sizeof(ss));
+        offset += sizeof(ss);
+        std::memcpy(&rs,  span.data() + offset, sizeof(rs));
+        offset += sizeof(rs);
+        std::memcpy(&pcl, span.data() + offset, sizeof(pcl));
+        offset += sizeof(pcl);
+        std::memcpy(&sc,  span.data() + offset, sizeof(sc));
+        offset += sizeof(sc);
+        
+        if (sc == 0 || sc > GCRYPT_SESSION_MAX_KEY_SKIP)
+            return convert_error<bytespan, messaging_session>("Invalid skipped key count found in deserialization: " + sc);
+        size_t left = span.size() - offset;
+        // we want a strict size match.
+        if (left != sc * sizeof(skipped_message_key))
+            return convert_error<bytespan, messaging_session>("Remaining bytes for skipped message keys was not equal to specified smk count.");
+        smks.reserve(sc);
+        
+        for(size_t i = 0; i < left; i++)
+        {
+            auto mem = span.subspan(offset, i * sizeof(skipped_message_key));
+            auto result = skipped_message_key::from_bytes(mem);
+
+            if (!result.has_value())
+                return std::unexpected(result.error());
+            smks.push_back(*result);
+        }
+        messaging_session session = make_empty();
+        
+        session.remoteIdentityKey = rik,
+        session.rootKey = rk,
+        session.sendingChainKey = sck,
+        session.receivingChainKey = rck,
+        session.localRatchetKey = lrk,
+        session.remoteRatchetKey = rrk,
+        session.sendSequence = ss,
+        session.receiveSequence = rs,
+        session.previousChainLength = pcl,
+        session.skippedKeys = std::move(smks);
+
+        return session;
+    }
+    /// @brief Serializes the messaging session in the order of which the keys are defined in the structure.
+    ///        Followed by all sequence counters. Then comes the skipped keys, which we first write a size_t
+    ///        For the length of the skipped keys, then each key sequentially.
+    /// @return the resulting bytes.
+    bytedata messaging_session::to_bytes() const
+    {
+        bytedata data;
+        data.resize(bytesize<messaging_session>());
+
+        size_t off = util::write_key_bytes(data, 0,
+                                remoteIdentityKey,
+                                rootKey,
+                                sendingChainKey,
+                                receivingChainKey,
+                                localRatchetKey.Public,
+                                localRatchetKey.Private,
+                                remoteRatchetKey);
+        std::ranges::copy(util::bytes(sendSequence),        data.begin() + off);
+        std::ranges::copy(util::bytes(receiveSequence),     data.begin() + (off += sizeof(sendSequence)));
+        std::ranges::copy(util::bytes(previousChainLength), data.begin() + (off += sizeof(receiveSequence)));
+        std::ranges::copy(util::bytes(skippedKeys.size()), data.begin() + (off += sizeof(previousChainLength)));
+        
+        
+        constexpr auto converter = [](const skipped_message_key& it)
+        { return it.to_bytes(); };
+        
+        auto skipped = skippedKeys |
+            std::views::transform(converter) | std::views::join;
+        data.append_range(skipped);
+        
+        return data;
     }
     bytedata messaging_session::header()
     {

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <string>
 #include <cstdint>
 #include <array>
@@ -8,7 +9,11 @@
 #include <variant>
 #include <optional>
 #include <span>
+#include <format>
+#include <ranges>
 #include <sodium.h>
+#include "bytesize.hpp"
+
 
 #ifndef GCRYPT_VERSION_STRING
     #define GCRYPT_VERSION_STRING "0.0.1"
@@ -39,12 +44,14 @@ extern "C"
 
 namespace gcrypt
 {
+    using namespace gcrypt::sizing;
 
     template<std::size_t _Size>
     using bytekey = std::array<uint8_t, _Size>;
 
     /// @brief (just a varying array of bytes).
     using bytespan = std::span<uint8_t>;
+    using fixed_bytespan = std::span<const uint8_t>;
     /// @brief A key of varying size
     using vkey     = std::vector<uint8_t>;
     using bytedata = std::vector<uint8_t>;
@@ -54,11 +61,21 @@ namespace gcrypt
     {
     private:
         std::array<uint8_t, _Bytes> impl_storage{};
+        
     public:
+        sizedecl(_Bytes);
+
         key() = default;
         key(const key& other) = default;
         key(key&& other) noexcept : impl_storage(other.impl_storage)
         { other.kill(); }
+        key(const bytespan& bytecontainer) : key()
+        { 
+            if (bytecontainer.size() < _Bytes)
+                throw std::invalid_argument(std::format("key<{}> Cannot be constructed with a bytespan of size {}.", _Bytes, bytecontainer.size()));
+            
+            std::ranges::copy(bytecontainer, impl_storage.begin());
+        }
 
         ~key() { kill(); }
 
@@ -96,7 +113,9 @@ namespace gcrypt
         
         operator bytekey<_Bytes>&() noexcept { return impl_storage; }
         operator const bytekey<_Bytes>&() const noexcept { return impl_storage; }
-
+        
+        inline static key<_Bytes> from_bytes(const bytespan& container) { return key{container}; }
+        
         auto begin() noexcept { return impl_storage.begin(); }
         auto end() noexcept { return impl_storage.end(); }
         auto begin() const noexcept { return impl_storage.begin(); }
@@ -116,6 +135,8 @@ namespace gcrypt
             >
     struct _keypair_impl
     {
+        sizedecl(_PublicBytes + _PrivateBytes);
+
         _PublicKeyType<_PublicBytes> Public;
         _PrivateKeyType<_PrivateBytes> Private;
     };
@@ -123,6 +144,8 @@ namespace gcrypt
     template<std::size_t _Bytes>
     struct idkey
     {
+        sizedecl(_Bytes + sizeof(uint32_t));
+
         key<_Bytes> data;
         uint32_t    identifier;
 
@@ -133,6 +156,8 @@ namespace gcrypt
     template<std::size_t _Bytes, std::size_t _SigBytes = _Bytes>
     struct sidkey : idkey<_Bytes>
     {
+        sizedecl(_Bytes + sizeof(uint32_t) + _SigBytes);
+
         key<_SigBytes> signature;
     };
 

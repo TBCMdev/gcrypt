@@ -1,6 +1,7 @@
 #pragma once
 #include "jni.h"
 #include "protocol.hpp"
+#include "pqxdh.hpp"
 
 /*
     Contains the wrapper definitions for integrating gcrypt with java/kotlin.
@@ -84,7 +85,7 @@ namespace gcrypt::jni
         xcikeypair SignedPreKey;
 
     public:
-        jni_session(local_key_bundle& ref)
+        jni_session(gcrypt::pqxdh::local_key_bundle& ref)
         {
             IdentityKey = ref.IdentityKey;
             SignedPreKey = ref.SignedPreKey;

@@ -1,8 +1,10 @@
 #pragma once
 #include "protocol.hpp"
+#include "util.hpp"
+#include "bytesize.hpp"
+#include <expected>
 #include <memory>
 #include <tuple>
-
 #ifndef GCRYPT_FUNC_USES_STORAGE
     #define GCRYPT_FUNC_USES_STORAGE
 #endif
@@ -11,9 +13,18 @@ namespace gcrypt::session
 {
     struct skipped_message_key
     {
+        sizedecl(bytesize<xckey>() + sizeof(uint32_t) + bytesize<key<32>>());
+
         xckey ratchetPublicKey;  // The remote ratchet key for this chain
-        uint32_t sequenceNumber; // Sequence number within that chain
         key<32> messageKey;      // Unused derived message key
+        uint32_t sequenceNumber; // Sequence number within that chain
+    
+        /// @brief Attempts to create a skipped message key from bytes, otherwise returning
+        ///        a convert_exception if something went wrong.
+        /// @param span the span of bytes.
+        /// @return the expected object.
+        static util::convert_result<skipped_message_key> from_bytes(const fixed_bytespan& span);
+        bytedata to_bytes() const;
     };
 
     struct message_header
@@ -32,6 +43,18 @@ namespace gcrypt::session
     /// @brief Active Double Ratchet session state for a specific peer
     struct messaging_session
     {
+        // Denoted as minimum size. This does not include skippedKeys.
+        sizedecl(bytesize<xckey>() * 2 +
+                 bytesize<key<32>>() * 3 + sizeof(uint32_t) * 3 + 
+                 bytesize<xckeypair>());
+
+        /// @brief Attempts to create a messaging_session from bytes, otherwise returning
+        ///        a convert_exception if something went wrong.
+        /// @param span the span of bytes.
+        /// @return the expected object.
+        static util::convert_result<messaging_session> from_bytes(const fixed_bytespan& bytes);
+        bytedata                                       to_bytes() const;
+
         xckey remoteIdentityKey;             // Remote verified long-term Public Identity Key
         
         key<32> rootKey;                     // Root Key (RK) - updated on every DH ratchet turn
@@ -55,8 +78,7 @@ namespace gcrypt::session
         /// @return The list of encrypted bytes
         bytedata ratchet_encrypt(const bytespan& msg);
 
-
-         /// @brief Handles the new message from the given session. If the provided message bytes have
+        /// @brief Handles the new message from the given session. If the provided message bytes have
         ///        already been handled, calling this again will cause undefined behaviour.
         /// @param data the data to decrypt
         /// @return the list of unencrypted bytes representing the sent message, or std::nullopt if the decryption failed.
@@ -68,10 +90,20 @@ namespace gcrypt::session
         /// @param PeerDHPublicKey DH Public Key
         /// @param masterSecretKey The secret key
         messaging_session(const xckey& SK, const xckey& PeerDHPublicKey, const key<32>& masterSecretKey);
+
         /// @brief Constructs a new messaging session given the local users' Local Ratchet Keys(LKR).
         /// @param SK The agreed upon secret key. 
         /// @param LRK The Local Ratchet Keypair
         messaging_session(const xckey& SK, const xckeypair& LRK, const key<32>& masterSecretKey);
+
+        /// @brief Constructs an empty messaging_session
+        constexpr static inline messaging_session make_empty()
+        {
+            return messaging_session();
+        }
+    protected:
+        messaging_session()
+        {}
 #ifndef GCRYPT_EXPOSE
     protected:
 #else

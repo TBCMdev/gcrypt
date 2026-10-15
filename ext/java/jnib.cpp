@@ -527,9 +527,9 @@ private:
     JNIEnv* getEnv() 
     {
         JNIEnv* env = nullptr;
-        jint res = jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+        jint res = jvm->GetEnv(reinterpret_cast<JNIEnv**>(&env), JNI_VERSION_1_6);
         if (res == JNI_EDETACHED) {
-            jvm->AttachCurrentThread(reinterpret_cast<void**>(&env), nullptr);
+            jvm->AttachCurrentThread(reinterpret_cast<JNIEnv**>(&env), nullptr);
         }
         return env;
     }

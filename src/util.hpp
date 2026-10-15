@@ -1,16 +1,22 @@
 #pragma once
 #include "protocol.hpp"
+#include "errors.hpp"
 #include <type_traits>
 
 #include <cstring>
 #include <cstddef>
 #include <stdexcept>
-
+#include <expected>
 #include <sodium.h>
 #include <tuple>
 
+
+
 namespace gcrypt::util
 {
+    template<typename _T>
+    using convert_result = std::expected<_T, convert_exception>;
+
     namespace types
     {
         template<std::size_t _S>
@@ -19,6 +25,13 @@ namespace gcrypt::util
         template<std::size_t... _Sizes>
         using sum_size_t = std::integral_constant<std::size_t, (... + _Sizes)>;
     }
+    /// @brief returns the size of the types of all the given items.
+    template<typename... _Tys>
+    constexpr inline std::size_t totalsize(_Tys&&... items)
+    {
+        return types::sum_size_t<(0 + ... + sizeof(_Tys))>::value;
+    }
+    
 
     /// @brief Returns true if both keys are identical.
     /// @tparam _Size The byte size of the key.
@@ -124,7 +137,16 @@ namespace gcrypt::util
 
         return key_id;
     }
-
+    /// @brief Copies of the bytes each key, concatenated sequentially, into dest + offset.
+    /// @tparam _Size The size of the keys
+    /// @param key the keys of varying byte-sizes.
+    /// @return the final offset denoting the first byte after all written bytes.
+    template<std::size_t... _Sizes>
+    inline size_t write_key_bytes(bytedata& dest, size_t offset, const key<_Sizes>&... keys)
+    {
+        ((std::copy(keys.begin(), keys.end(), dest.begin() + offset), offset += keys.size()), ...);
+        return offset;
+    }
     /// @brief Returns a variable array (vector) of the bytes each key, concatenated sequentially.
     /// @tparam _Size The size of the keys
     /// @param key the keys of varying byte-sizes.
@@ -135,17 +157,22 @@ namespace gcrypt::util
         vkey out{};
         out.reserve(types::sum_size_t<_Sizes...>::value);
         
-        size_t offset = 0;
-
-        ((std::copy(keys.begin(), keys.end(), out.begin() + offset), offset += keys.size()), ...);
-        
+        write_key_bytes<_Sizes...>(out, 0, keys...);        
         return out;
     }
+
+    /// @brief Returns a span to the given bytes of the given parameter.
+    template<typename _Byteable>
+    inline std::span<const uint8_t> bytes(const _Byteable& bytetype)
+    {
+        return std::span<const uint8_t>{reinterpret_cast<const uint8_t*>(&bytetype), sizeof(_Byteable)};
+    }
+    
 
     /// @brief Loads the specified byte region into the specified key instance.
     /// @return Whether or not the operation was a success.
     template<std::size_t _Size>
-    inline bool load_keyb(const bytespan& bytes, key<_Size>& ref, std::size_t offset = 0)
+    inline bool load_keyb(const fixed_bytespan& bytes, key<_Size>& ref, std::size_t offset = 0)
     {
         if (_Size + offset > bytes.size())
             return false;
@@ -158,12 +185,12 @@ namespace gcrypt::util
     ///        And memzeros the contents of the bytes buffer upon success.
     /// @return Whether or not the operation was a success.
     template<std::size_t _Size>
-    inline bool load_keyb_s(const bytespan& bytes, key<_Size>& ref, std::size_t offset = 0)
+    inline bool load_keyb_s(bytespan bytes, key<_Size>& ref, std::size_t offset = 0)
     {
         if (!load_keyb(bytes, ref, offset))
             return false;
 
-        sodium_memzero(bytes.data(), _Size);
+        sodium_memzero(bytes.data() + offset, _Size);
         return true;
     }
 
