@@ -2,6 +2,10 @@
 #include <stdexcept>
 #include <expected>
 
+#if !defined(__PRETTY_FUNCTION__) && !defined(__GNUC__)
+    #define __PRETTY_FUNCTION__ __FUNCSIG__
+#endif
+
 namespace gcrypt
 {
 #define GCRYPT_NOT_IMPLEMENTED(warn) throw gcrypt::not_implemented(warn);
@@ -23,15 +27,15 @@ namespace gcrypt
     };
 #define _ERR_STR "Conversion failed with execution: {}"
 
-    inline constexpr convert_exception convert_failed() { return convert_exception(); };
+    inline convert_exception convert_failed() { return convert_exception(); };
     template<typename _From, typename _To>
-    inline constexpr convert_exception convert_failed() { return convert_exception(std::format(_ERR_STR, __PRETTY_FUNCTION__)); };
+    inline convert_exception convert_failed() { return convert_exception(std::format(_ERR_STR, __PRETTY_FUNCTION__)); };
     template<typename _From, typename _To>
-    inline constexpr convert_exception convert_failed(const std::string& err) { return convert_exception(std::format(_ERR_STR " with error: '{}'", __PRETTY_FUNCTION__, err)); };
+    inline convert_exception convert_failed(const std::string& err) { return convert_exception(std::format(_ERR_STR " with error: '{}'", __PRETTY_FUNCTION__, err)); };
     template<typename _From, typename _To>
-    inline constexpr std::unexpected<convert_exception> convert_error(const std::string& err) { return std::unexpected(convert_failed<_From, _To>(err)); };
+    inline std::unexpected<convert_exception> convert_error(const std::string& err) { return std::unexpected(convert_failed<_From, _To>(err)); };
     template<typename _From, typename _To>
-    inline constexpr std::unexpected<convert_exception> convert_error() { return std::unexpected(convert_failed<_From, _To>()); };
+    inline std::unexpected<convert_exception> convert_error() { return std::unexpected(convert_failed<_From, _To>()); };
 
 #undef _ERR_STR
 

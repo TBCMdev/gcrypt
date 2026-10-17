@@ -173,7 +173,7 @@ namespace gcrypt::store
             if (!loaded.has_value())
                 return std::nullopt;
             
-            session::msessionref ref (&loaded.value());
+            auto ref = std::make_shared<session::messaging_session>(std::move(*loaded));
 
             store_cached_session(recipient_id, ref);
             return ref;

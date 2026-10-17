@@ -8,6 +8,7 @@
 
 namespace gcrypt
 {
+
     namespace Ed25519
     {
         #define GCRYPT_ALG_ED25519_SIGNBYTE 31
@@ -150,7 +151,7 @@ namespace gcrypt
         template<std::size_t _OutputSize, std::size_t _IkmSize>
         key<_OutputSize> KDF(const key<_IkmSize>& secretKeyMaterial, const std::string_view appDomainInfo = "PQX3DH")
         {
-            // F = 32 bytes of 0xFF for Curve25519 (57 bytes of 0xFF for Curve448)
+            // F = 32 bytes of 0xFF for Curve25519
             const auto F = keygen::filled<GCRYPT_X25519_KEY_SIZE>(0xFF);
 
             // KM = F || secretKeyMaterial

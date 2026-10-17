@@ -35,7 +35,7 @@ namespace gcrypt::HKDF
         // OKM = HKDF-Expand(PRK, info, L = 64)
         key<64> okm = expand<64>(prk, appDomainInfo);
 
-        return util::kcut<sizeof(xckey), sizeof(xckey)>(okm);
+        return util::kcut<typebytes(xckey), typebytes(xckey)>(okm);
     }
 }
 namespace gcrypt::X25519
@@ -184,8 +184,8 @@ namespace gcrypt::AEAD
     }
     vkey encrypt(const bytespan& plaintext, const bytespan& assoc, const key<32> messageKey)
     {
-        constexpr std::size_t EKB = sizeof(enc_key);
-        constexpr std::size_t NKB = sizeof(non_key);
+        constexpr std::size_t EKB = typebytes(enc_key);
+        constexpr std::size_t NKB = typebytes(non_key);
         constexpr std::size_t TKB = EKB + NKB;
 
         auto okm = HKDF::expand<TKB>(messageKey, SP_INFO_STRING);
@@ -217,8 +217,8 @@ namespace gcrypt::AEAD
     }
     std::optional<vkey> decrypt(const bytespan& ciphertext, const bytespan& assoc, const key<32>& messageKey)
     {
-        constexpr std::size_t EKB = sizeof(enc_key);
-        constexpr std::size_t NKB = sizeof(non_key);
+        constexpr std::size_t EKB = typebytes(enc_key);
+        constexpr std::size_t NKB = typebytes(non_key);
         constexpr std::size_t TKB = EKB + NKB;
 
         auto okm = HKDF::expand<TKB>(messageKey, SP_INFO_STRING);

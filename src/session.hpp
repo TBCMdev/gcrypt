@@ -2,9 +2,11 @@
 #include "protocol.hpp"
 #include "util.hpp"
 #include "bytesize.hpp"
+#include "keygen.hpp"
 #include <expected>
 #include <memory>
 #include <tuple>
+#include <expected>
 #ifndef GCRYPT_FUNC_USES_STORAGE
     #define GCRYPT_FUNC_USES_STORAGE
 #endif
@@ -40,12 +42,49 @@ namespace gcrypt::session
         bytespan data;
     };
 
+    enum class RatchetFailureType
+    {
+        STORAGE_FAILED,
+        MAX_SKIP_REACHED,
+        KEY_GEN_ERROR,
+        BAD_DECRYPT // for decrypt ratchet step only
+    };
+
+    struct RatchetStepError : std::runtime_error
+    {
+        RatchetStepError(const RatchetFailureType& failure) : std::runtime_error(std::format("Ratcheting step failed with exception id: {}",
+                                                                                    static_cast<int>(failure)))
+        {}
+        RatchetStepError(const RatchetFailureType& failure, const std::string& message) : std::runtime_error(std::format("Ratcheting step failed with exception id: {} and message: {}",
+                                                                                                                static_cast<int>(failure), message))
+        {}
+        RatchetStepError(const gcrypt::keygen::KeyGenError& kge) : RatchetStepError(RatchetFailureType::KEY_GEN_ERROR, keygen::descriptive_error(kge)) {}
+    };
+
+    using ratchet_result      = std::expected<bytedata, RatchetStepError>;
+    using ratchet_step_status = std::optional<RatchetStepError>;
+    template<typename _Ret>
+    using ratchet_step_result = std::expected<_Ret, RatchetStepError>;
+
+
+    inline ratchet_result ratchet_failed(RatchetFailureType type)
+    {
+        return std::unexpected(RatchetStepError(type));
+    }
+    inline ratchet_result ratchet_failed(RatchetFailureType type, const std::string& message)
+    {
+        return std::unexpected(RatchetStepError(type, message));
+    }
+
+    
+
     /// @brief Active Double Ratchet session state for a specific peer
     struct messaging_session
     {
-        // Denoted as minimum size. This does not include skippedKeys.
+        
+        // Denoted as minimum size. This does not include skippedKeys, but includes the length of skippedKeys.
         sizedecl(bytesize<xckey>() * 2 +
-                 bytesize<key<32>>() * 3 + sizeof(uint32_t) * 3 + 
+                 bytesize<key<32>>() * 3 + sizeof(uint32_t) * 4 + 
                  bytesize<xckeypair>());
 
         /// @brief Attempts to create a messaging_session from bytes, otherwise returning
@@ -74,15 +113,14 @@ namespace gcrypt::session
         /// @brief Constructs a payload in byte form that can be sent to the recipient
         ///        of this messaging session.
         /// @param msg the un encrypted message content in byte form.
-        /// @throws An error if the encryption was not successful
-        /// @return The list of encrypted bytes
-        bytedata ratchet_encrypt(const bytespan& msg);
+        /// @return The list of encrypted bytes, or an error if one occured.
+        ratchet_result ratchet_encrypt(const bytespan& msg);
 
         /// @brief Handles the new message from the given session. If the provided message bytes have
         ///        already been handled, calling this again will cause undefined behaviour.
         /// @param data the data to decrypt
-        /// @return the list of unencrypted bytes representing the sent message, or std::nullopt if the decryption failed.
-        std::optional<bytedata> ratchet_decrypt(const bytespan& data);
+        /// @return the list of unencrypted bytes representing the sent message, or an error if the decryption failed.
+        ratchet_result ratchet_decrypt(const bytespan& data);
 
         /// @brief Constructs a new messaging session given the secret key, and the recipients
         ///        Diffie hellman public key.
@@ -97,7 +135,7 @@ namespace gcrypt::session
         messaging_session(const xckey& SK, const xckeypair& LRK, const key<32>& masterSecretKey);
 
         /// @brief Constructs an empty messaging_session
-        constexpr static inline messaging_session make_empty()
+        static inline messaging_session make_empty()
         {
             return messaging_session();
         }
@@ -126,7 +164,7 @@ namespace gcrypt::session
     #define GCRYPT_HEADER_LEN 40
     #define GCRYPT_SESSION_MAX_KEY_SKIP 5
         std::optional<xckey> try_skipped_msg_keys(const message_header& header);
-        void                 skip_msg_keys       (int until);
+        ratchet_step_status skip_msg_keys(int until);
         // converts the current state of the session into a byte header.
         bytedata header();
         // decodes the given span of bytes into a message header. If data contains extra bytes, they are not
@@ -134,12 +172,12 @@ namespace gcrypt::session
         message_header get_header(const bytespan& data);
 
         std::tuple<key<32>, uint32_t> ratchet_send_key();
-        key<32> ratchet_receive_key(const message_header& header);
+        ratchet_step_result<key<32>> ratchet_receive_key(const message_header& header);
         // Performs the ratchet decrypt step.
 
         // Performs the diffie hellman ratchet step for the given received message header.
-        void dh_ratchet(const message_header& header);
-        void dhstep();
+        ratchet_step_status dh_ratchet(const message_header& header);
+        ratchet_step_status dhstep();
     };
 
     using msessionref = std::shared_ptr<messaging_session>;

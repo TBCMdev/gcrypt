@@ -25,12 +25,6 @@ namespace gcrypt::util
         template<std::size_t... _Sizes>
         using sum_size_t = std::integral_constant<std::size_t, (... + _Sizes)>;
     }
-    /// @brief returns the size of the types of all the given items.
-    template<typename... _Tys>
-    constexpr inline std::size_t totalsize(_Tys&&... items)
-    {
-        return types::sum_size_t<(0 + ... + sizeof(_Tys))>::value;
-    }
     
 
     /// @brief Returns true if both keys are identical.
@@ -130,7 +124,7 @@ namespace gcrypt::util
         uint32_t key_id = 0;
         
         crypto_generichash(
-            reinterpret_cast<unsigned char*>(&key_id), sizeof(key_id),
+            reinterpret_cast<unsigned char*>(&key_id), varbytes(key_id),
             reinterpret_cast<const unsigned char*>(publicKey.data()), _Size,
             nullptr, 0
         );
@@ -155,7 +149,7 @@ namespace gcrypt::util
     inline vkey key_bytes(const key<_Sizes>&... keys)
     {
         vkey out{};
-        out.reserve(types::sum_size_t<_Sizes...>::value);
+        out.resize(types::sum_size_t<_Sizes...>::value);
         
         write_key_bytes<_Sizes...>(out, 0, keys...);        
         return out;
@@ -165,7 +159,7 @@ namespace gcrypt::util
     template<typename _Byteable>
     inline std::span<const uint8_t> bytes(const _Byteable& bytetype)
     {
-        return std::span<const uint8_t>{reinterpret_cast<const uint8_t*>(&bytetype), sizeof(_Byteable)};
+        return std::span<const uint8_t>{reinterpret_cast<const uint8_t*>(&bytetype), typebytes(_Byteable)};
     }
     
 

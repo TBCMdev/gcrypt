@@ -228,7 +228,7 @@ namespace gcrypt::pqxdh
             auto pik = GCRYPT_ISTORE->load_identity_key_pair();
             !pik.has_value()                                                ||
             util::load_keyb_s(*pik, localIdentityKey.Public)                  ||
-            util::load_keyb_s(*pik, localIdentityKey.Private, sizeof(xckey))
+            util::load_keyb_s(*pik, localIdentityKey.Private, typebytes(xckey))
             )
             return std::nullopt;
         
@@ -236,7 +236,7 @@ namespace gcrypt::pqxdh
         if (
             auto spk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedPreKeys[0], store::key_type::PREKEY);
             !spk.has_value()                                                ||
-            util::load_keyb_s(*spk, usedPrivateSignedPreKey, sizeof(xckey))
+            util::load_keyb_s(*spk, usedPrivateSignedPreKey, typebytes(xckey))
             )
             return std::nullopt;
 
@@ -248,7 +248,7 @@ namespace gcrypt::pqxdh
             if (
                 auto opk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedPreKeys[1], store::key_type::PREKEY);
                 !opk.has_value()                                                ||
-                util::load_keyb_s(*opk, usedPrivateOneTimePreKey, sizeof(xckey))
+                util::load_keyb_s(*opk, usedPrivateOneTimePreKey, typebytes(xckey))
                 )
                 return std::nullopt;
         }

@@ -166,7 +166,7 @@ namespace gcrypt::jniOM::to
 
         // 1. Identity Key (xckey = key<32>)
         jbyteArray jIdKey = static_cast<jbyteArray>(env->GetObjectField(foreignBundle, fid_identityKey));
-        auto identityKeyOpt = to_key<sizeof(gcrypt::xckey)>(JNI_CONTEXT, jIdKey);
+        auto identityKeyOpt = to_key<typebytes(gcrypt::xckey)>(JNI_CONTEXT, jIdKey);
         if (jIdKey) env->DeleteLocalRef(jIdKey);
 
         if (!identityKeyOpt) {
@@ -177,8 +177,8 @@ namespace gcrypt::jniOM::to
         // 2. Signed PreKey (xcsikey = sidkey<32, 64>)
         jobject jSignedPreKey = env->GetObjectField(foreignBundle, fid_signedPreKey);
         auto signedPreKeyOpt  = to_sid_key<
-            sizeof(decltype(gcrypt::xcsikey::data)), 
-            sizeof(decltype(gcrypt::xcsikey::signature))
+            varbytes(gcrypt::xcsikey::data), 
+            varbytes(gcrypt::xcsikey::signature)
         >(JNI_CONTEXT, jSignedPreKey);
 
         if (jSignedPreKey) env->DeleteLocalRef(jSignedPreKey);
@@ -204,8 +204,8 @@ namespace gcrypt::jniOM::to
 
         if (isSidKey) {
             auto qSidOpt = to_sid_key<
-                sizeof(decltype(gcrypt::qsidkey::data)), 
-                sizeof(decltype(gcrypt::qsidkey::signature))
+                varbytes(gcrypt::qsidkey::data), 
+                varbytes(gcrypt::qsidkey::signature)
             >(JNI_CONTEXT, jQuantumKey);
 
             if (!qSidOpt) {
@@ -216,7 +216,7 @@ namespace gcrypt::jniOM::to
             quantumPreKey = *qSidOpt;
         } 
         else {
-            auto qIdOpt = to_id_key<sizeof(decltype(gcrypt::qpubikey::data))>(JNI_CONTEXT, jQuantumKey);
+            auto qIdOpt = to_id_key<varbytes(gcrypt::qpubikey::data)>(JNI_CONTEXT, jQuantumKey);
 
             if (!qIdOpt) {
                 env->DeleteLocalRef(jQuantumKey);
@@ -232,7 +232,7 @@ namespace gcrypt::jniOM::to
         std::optional<gcrypt::xcikey> oneTimePreKeyOpt;
 
         if (jOneTimePreKey) {
-            oneTimePreKeyOpt = to_id_key<sizeof(decltype(gcrypt::xcikey::data))>(JNI_CONTEXT, jOneTimePreKey);
+            oneTimePreKeyOpt = to_id_key<varbytes(gcrypt::xcikey::data)>(JNI_CONTEXT, jOneTimePreKey);
             env->DeleteLocalRef(jOneTimePreKey);
         }
 
@@ -262,28 +262,28 @@ namespace gcrypt::jniOM::to
 
         initial_message_handshake handshake{};
 
-        // 1. Identity Key (32 bytes)
+        // Identity Key (32 bytes)
         jbyteArray jIdKey = static_cast<jbyteArray>(env->GetObjectField(jHandshake, fid_identityKey));
-        auto idOpt = to_key<sizeof(gcrypt::xckey)>(JNI_CONTEXT, jIdKey);
+        auto idOpt = to_key<typebytes(gcrypt::xckey)>(JNI_CONTEXT, jIdKey);
         if (jIdKey) env->DeleteLocalRef(jIdKey);
         if (!idOpt) { env->DeleteLocalRef(clazz); return std::nullopt; }
         handshake.identityKey = *idOpt;
 
-        // 2. Ephemeral Key (32 bytes)
+        // Ephemeral Key (32 bytes)
         jbyteArray jEphKey = static_cast<jbyteArray>(env->GetObjectField(jHandshake, fid_ephemeralKey));
-        auto ephOpt = to_key<sizeof(gcrypt::xckey)>(JNI_CONTEXT, jEphKey);
+        auto ephOpt = to_key<typebytes(gcrypt::xckey)>(JNI_CONTEXT, jEphKey);
         if (jEphKey) env->DeleteLocalRef(jEphKey);
         if (!ephOpt) { env->DeleteLocalRef(clazz); return std::nullopt; }
         handshake.ephermoralKey = *ephOpt;
 
-        // 3. CipherText / Quantum Encapsulation (qpubkey bytes)
+        // CipherText / Quantum Encapsulation (qpubkey bytes)
         jbyteArray jCipher = static_cast<jbyteArray>(env->GetObjectField(jHandshake, fid_cipherText));
-        auto cipherOpt = to_key<sizeof(gcrypt::qpubkey)>(JNI_CONTEXT, jCipher);
+        auto cipherOpt = to_key<typebytes(gcrypt::qpubkey)>(JNI_CONTEXT, jCipher);
         if (jCipher) env->DeleteLocalRef(jCipher);
         if (!cipherOpt) { env->DeleteLocalRef(clazz); return std::nullopt; }
         handshake.cipherText = *cipherOpt;
 
-        // 4. Used PreKey IDs (jintArray -> std::vector<uint32_t>)
+        // Used PreKey IDs (jintArray -> std::vector<uint32_t>)
         jintArray jPreKeys = static_cast<jintArray>(env->GetObjectField(jHandshake, fid_usedPreKeys));
         if (jPreKeys) {
             jsize len = env->GetArrayLength(jPreKeys);
@@ -292,7 +292,7 @@ namespace gcrypt::jniOM::to
             env->DeleteLocalRef(jPreKeys);
         }
 
-        // 5. Used Quantum PreKey IDs (jintArray -> std::vector<uint32_t>)
+        // Used Quantum PreKey IDs (jintArray -> std::vector<uint32_t>)
         jintArray jQPreKeys = static_cast<jintArray>(env->GetObjectField(jHandshake, fid_usedQuantumPreKeys));
         if (jQPreKeys) {
             jsize len = env->GetArrayLength(jQPreKeys);
@@ -400,7 +400,7 @@ GCRYPT_LIB_JNI_FUNC(initializeExistingSession)(
         return nullptr;
     }
 
-    auto longTermIdentityKey = gcrypt::jniOM::to::to_key<sizeof(gcrypt::xckey)>(JNI_CONTEXT, _longTermIdentityKey);
+    auto longTermIdentityKey = gcrypt::jniOM::to::to_key<typebytes(gcrypt::xckey)>(JNI_CONTEXT, _longTermIdentityKey);
     if (!longTermIdentityKey.has_value()) {
         return nullptr;
     }
@@ -450,22 +450,25 @@ GCRYPT_LIB_JNI_FUNC(encryptTo)(JNI_ENTRY_PCONTEXT, jstring whoId, jbyteArray mes
     if (!session)
         return nullptr;
     
-
     jsize len = env->GetArrayLength(message);
 
     jbyte* elements = env->GetByteArrayElements(message, nullptr);
 
     gcrypt::bytespan msgSpan(reinterpret_cast<uint8_t*>(elements), static_cast<std::size_t>(len));
 
-    gcrypt::bytedata decrypted = (*session)->ratchet_encrypt(msgSpan);
+    auto encrypted = (*session)->ratchet_encrypt(msgSpan);
+    
+    // todo: add errors
+    if (!encrypted.has_value())
+        return nullptr;
 
     env->ReleaseByteArrayElements(message, elements, JNI_ABORT);
 
-    jsize outLen = static_cast<jsize>(decrypted.size());
+    jsize outLen = static_cast<jsize>(encrypted->size());
     jbyteArray outArray = env->NewByteArray(outLen);
 
     if (outArray != nullptr) {
-        env->SetByteArrayRegion(outArray, 0, outLen, reinterpret_cast<const jbyte*>(decrypted.data()));
+        env->SetByteArrayRegion(outArray, 0, outLen, reinterpret_cast<const jbyte*>(encrypted->data()));
     }
 
     return outArray;
@@ -527,9 +530,10 @@ private:
     JNIEnv* getEnv() 
     {
         JNIEnv* env = nullptr;
-        jint res = jvm->GetEnv(reinterpret_cast<JNIEnv**>(&env), JNI_VERSION_1_6);
+        void** _env = reinterpret_cast<void**>(&env);
+        jint res = jvm->GetEnv(_env, JNI_VERSION_1_6);
         if (res == JNI_EDETACHED) {
-            jvm->AttachCurrentThread(reinterpret_cast<JNIEnv**>(&env), nullptr);
+            jvm->AttachCurrentThread(_env, nullptr);
         }
         return env;
     }
@@ -589,9 +593,10 @@ public:
         env->GetByteArrayRegion(jBlob, 0, len, reinterpret_cast<jbyte*>(blob.data()));
         env->DeleteLocalRef(jBlob);
 
-        // TODO: The storage manager expects a fully constructed messaging_session.
-        // You must deserialize the 'blob' (vector<uint8_t>) back into a messaging_session here.
-        throw std::runtime_error("Implement session deserialization from blob!");
+        auto session = gcrypt::session::messaging_session::from_bytes(blob);
+        if (!session.has_value())
+            return std::nullopt;
+        return *session;
     }
 
     void close_session(const std::string& recipient_id) override 

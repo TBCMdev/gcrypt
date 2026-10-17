@@ -91,7 +91,7 @@ namespace gcrypt::wasmOM::to
 
         foreign_prekey_bundle bundle{};
 
-        auto idKeyOpt = to_key<sizeof(gcrypt::xckey)>(foreignBundle["identityKey"]);
+        auto idKeyOpt = to_key<typebytes(gcrypt::xckey)>(foreignBundle["identityKey"]);
         if (!idKeyOpt) return std::nullopt;
         bundle.identityKey = *idKeyOpt;
 
@@ -185,8 +185,8 @@ val initializeNewSession(val foreignBundle)
     if (!localIdKeyOpt.has_value()) return val::null();
 
     gcrypt::xckeypair localIdentityKeyPair;
-    std::copy(localIdKeyOpt->begin(), localIdKeyOpt->begin() + sizeof(gcrypt::xckey), localIdentityKeyPair.Public.begin());
-    std::copy(localIdKeyOpt->begin() + sizeof(gcrypt::xckey), localIdKeyOpt->end(), localIdentityKeyPair.Private.begin());
+    std::copy(localIdKeyOpt->begin(), localIdKeyOpt->begin() + typebytes(gcrypt::xckey), localIdentityKeyPair.Public.begin());
+    std::copy(localIdKeyOpt->begin() + typebytes(gcrypt::xckey), localIdKeyOpt->end(), localIdentityKeyPair.Private.begin());
 
     auto bundle = gcrypt::wasmOM::to::foreignpk_bundle(foreignBundle);
     if (!bundle.has_value()) return val::null();
@@ -205,11 +205,11 @@ val initializeExistingSession(val longTermIdentityKey, val foreignBundle)
     if (!localIdKeyOpt.has_value()) return val::null();
 
     gcrypt::xckeypair localIdentityKeyPair;
-    std::copy(localIdKeyOpt->begin(), localIdKeyOpt->begin() + sizeof(gcrypt::xckey), localIdentityKeyPair.Public.begin());
-    std::copy(localIdKeyOpt->begin() + sizeof(gcrypt::xckey), localIdKeyOpt->end(), localIdentityKeyPair.Private.begin());
+    std::copy(localIdKeyOpt->begin(), localIdKeyOpt->begin() + typebytes(gcrypt::xckey), localIdentityKeyPair.Public.begin());
+    std::copy(localIdKeyOpt->begin() + typebytes(gcrypt::xckey), localIdKeyOpt->end(), localIdentityKeyPair.Private.begin());
 
     auto bundle = gcrypt::wasmOM::to::foreignpk_bundle(foreignBundle);
-    auto remoteIdentityKey = gcrypt::wasmOM::to::to_key<sizeof(gcrypt::xckey)>(longTermIdentityKey);
+    auto remoteIdentityKey = gcrypt::wasmOM::to::to_key<typebytes(gcrypt::xckey)>(longTermIdentityKey);
     
     if (!bundle.has_value() || !remoteIdentityKey.has_value()) return val::null();
 
