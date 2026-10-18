@@ -8,17 +8,23 @@
 namespace gcrypt::session
 {
 
-    messaging_session::messaging_session(const xckey& SK, const xckey& PeerDHPublicKey, const key<32>& masterSecretKey) :
-        remoteIdentityKey(SK),
-        remoteRatchetKey(PeerDHPublicKey),
-        rootKey(masterSecretKey)
+    messaging_session::messaging_session(const std::string& recipientId, const xckey& SK, const xckey& PeerDHPublicKey, const key<32>& masterSecretKey) :
+        identifier(recipientId), rstate
+        {
+            .remoteIdentityKey = SK,
+            .rootKey           = masterSecretKey,
+            .remoteRatchetKey  = PeerDHPublicKey
+        }
     {
         dhstep();
     }
-    messaging_session::messaging_session(const xckey& SK, const xckeypair& LRK, const key<32>& masterSecretKey) :
-        remoteIdentityKey(SK),
-        localRatchetKey(LRK),
-        rootKey(masterSecretKey)
+    messaging_session::messaging_session(const std::string& recipientId, const xckey& SK, const xckeypair& LRK, const key<32>& masterSecretKey) :
+        identifier(recipientId), rstate
+        {
+            .remoteIdentityKey = SK,
+            .rootKey = masterSecretKey,
+            .localRatchetKey = LRK
+        }
     {
         // master secret already derived and received.
     }
@@ -52,7 +58,7 @@ namespace gcrypt::session
 
         return data;
     }
-    util::convert_result<messaging_session> messaging_session::from_bytes(const fixed_bytespan& from)
+    util::convert_result<messaging_session> messaging_session::from_bytes(const std::string& recipientId, const fixed_bytespan& from)
     {
         if (from.size() < typebytes(messaging_session))
             return convert_error<fixed_bytespan, messaging_session>("Bytearray not long enough for sizeof(messaging_session).");
@@ -64,7 +70,7 @@ namespace gcrypt::session
         xckeypair lrk;
         xckey rrk;
         uint32_t ss, rs, pcl;
-        size_t sc; // skipped count
+        uint32_t sc; // skipped count
         std::vector<skipped_message_key> smks;
 
         const std::span<const uint8_t> span(from.begin(), from.end());
@@ -98,23 +104,23 @@ namespace gcrypt::session
             return convert_error<bytespan, messaging_session>("Remaining bytes for skipped message keys was not equal to specified smk count.");
         smks.reserve(sc);
         
-        for(size_t i = 0; i < left; i++)
+        for(size_t i = 0; i < sc; i++)
         {
-            auto mem = span.subspan(offset, i * typebytes(skipped_message_key));
+            auto mem = span.subspan(offset + i * typebytes(skipped_message_key), typebytes(skipped_message_key));
             auto result = skipped_message_key::from_bytes(mem);
 
             if (!result.has_value())
                 return std::unexpected(result.error());
             smks.push_back(*result);
         }
-        messaging_session session = make_empty();
+        messaging_session session = make_empty(recipientId);
         
-        session.remoteIdentityKey = rik,
-        session.rootKey = rk,
-        session.sendingChainKey = sck,
-        session.receivingChainKey = rck,
-        session.localRatchetKey = lrk,
-        session.remoteRatchetKey = rrk,
+        session.rstate.remoteIdentityKey = rik,
+        session.rstate.rootKey = rk,
+        session.rstate.sendingChainKey = sck,
+        session.rstate.receivingChainKey = rck,
+        session.rstate.localRatchetKey = lrk,
+        session.rstate.remoteRatchetKey = rrk,
         session.sendSequence = ss,
         session.receiveSequence = rs,
         session.previousChainLength = pcl,
@@ -132,18 +138,17 @@ namespace gcrypt::session
         data.resize(typebytes(messaging_session));
 
         size_t off = util::write_key_bytes(data, 0,
-                                remoteIdentityKey,
-                                rootKey,
-                                sendingChainKey,
-                                receivingChainKey,
-                                localRatchetKey.Public,
-                                localRatchetKey.Private,
-                                remoteRatchetKey);
+                                rstate.remoteIdentityKey,
+                                rstate.rootKey,
+                                rstate.sendingChainKey,
+                                rstate.receivingChainKey,
+                                rstate.localRatchetKey.Public,
+                                rstate.localRatchetKey.Private,
+                                rstate.remoteRatchetKey);
         std::ranges::copy(util::bytes(sendSequence),        data.begin() + off);
         std::ranges::copy(util::bytes(receiveSequence),     data.begin() + (off += varbytes(sendSequence)));
         std::ranges::copy(util::bytes(previousChainLength), data.begin() + (off += varbytes(receiveSequence)));
-        std::ranges::copy(util::bytes(skippedKeys.size()), data.begin() + (off += varbytes(previousChainLength)));
-        
+        std::ranges::copy(util::bytes(static_cast<uint32_t>(skippedKeys.size())), data.begin() + (off += varbytes(previousChainLength)));
         
         constexpr auto converter = [](const skipped_message_key& it)
         { return it.to_bytes(); };
@@ -158,7 +163,7 @@ namespace gcrypt::session
     {
         bytedata data(GCRYPT_HEADER_LEN);
 
-        util::kcpy(remoteRatchetKey, bytespan(data));
+        util::kcpy(rstate.localRatchetKey.Public, bytespan(data));
         std::memcpy(data.data() + typebytes(xckey),
                     static_cast<void*>(&sendSequence),
                     varbytes(sendSequence));
@@ -182,12 +187,21 @@ namespace gcrypt::session
 
     std::tuple<key<32>, uint32_t> messaging_session::ratchet_send_key()
     {
-        constexpr size_t LHS = varbytes(sendingChainKey), RHS = varbytes(skipped_message_key::messageKey);
+        constexpr size_t LHS = varbytes(rstate.sendingChainKey), RHS = varbytes(skipped_message_key::messageKey);
 
         key<32> mk;
-        std::tie(sendingChainKey, mk) = util::kcut<LHS, RHS>(HKDF::KDF<(LHS + RHS)>(sendingChainKey));
+        std::tie(rstate.sendingChainKey, mk) = util::kcut<LHS, RHS>(HKDF::KDF<(LHS + RHS)>(rstate.sendingChainKey));
 
         return std::make_tuple(mk, sendSequence++);
+    }
+    void messaging_session::commit_state()
+    {
+        skippedKeys.append_range(rstate.stagedSkippedKeys);
+        rstate.stagedSkippedKeys.clear();
+        
+        bytedata bytes = to_bytes();
+
+        GCRYPT_ISTORE->store_session(identifier, bytes);
     }
     ratchet_result messaging_session::ratchet_encrypt(const bytespan& msg)
     {
@@ -197,24 +211,36 @@ namespace gcrypt::session
         if (!lid.has_value())
             return ratchet_failed(RatchetFailureType::STORAGE_FAILED, "Could not encrypt data. IStore failed to fetch local keys.");
 
-        // only keep public key.
-        xckey lid_p;
-        std::copy(lid->begin(), lid->begin() + typebytes(xckey), lid_p.begin());
+        ratchet_state cstate = state();
 
-        constexpr std::string_view ver_str = GCRYPT_VERSION_STRING;
-        static key<ver_str.size()> ver;
-        std::memcpy(ver.data(), ver_str.data(), ver_str.size());
+        // NOTE: try block might not be necessary. This is not great for performance.
+        try
+        {
+            // only keep public key.
+            xckey lid_p;
+            std::copy(lid->begin(), lid->begin() + typebytes(xckey), lid_p.begin());
 
-        bytedata head = header();
+            constexpr std::string_view ver_str = GCRYPT_VERSION_STRING;
+            static key<ver_str.size()> ver;
+            std::memcpy(ver.data(), ver_str.data(), ver_str.size());
 
-        auto AD = util::kconcat(ver, lid_p, remoteIdentityKey);
+            bytedata head = header();
 
-        const auto& [mk, sseq] = ratchet_send_key();
+            auto AD = util::kconcat(ver, lid_p, rstate.remoteIdentityKey);
 
-        auto ct = AEAD::encrypt(msg, AD, mk);
+            const auto& [mk, sseq] = ratchet_send_key();
 
-        head.insert(head.end(), ct.begin(), ct.end());
-        return head;
+            auto ct = AEAD::encrypt(msg, AD, mk);
+
+            head.insert(head.end(), ct.begin(), ct.end());
+            
+            commit_state();
+            return head;
+        }catch(std::exception& e)
+        {
+            rollback_state(cstate);
+            return ratchet_failed(RatchetFailureType::BAD_ENCRYPT, e.what());
+        }
     }
     ratchet_step_result<key<32>> messaging_session::ratchet_receive_key(const message_header& header)
     {
@@ -223,7 +249,7 @@ namespace gcrypt::session
         if (mkey)
             return *mkey;
 
-        if (!util::kmatch(header.ratchet, remoteRatchetKey))
+        if (!util::kmatch(header.ratchet, rstate.remoteRatchetKey))
         {
             auto failed = skip_msg_keys(header.cpn);
             if (failed)
@@ -235,10 +261,10 @@ namespace gcrypt::session
         if (failed)
             return std::unexpected(*failed);
 
-        constexpr size_t LHS = varbytes(receivingChainKey), RHS = varbytes(skipped_message_key::messageKey);
+        constexpr size_t LHS = varbytes(rstate.receivingChainKey), RHS = varbytes(skipped_message_key::messageKey);
 
         key<32> mk;
-        std::tie(receivingChainKey, mk) = util::kcut<LHS, RHS>(HKDF::KDF<(LHS + RHS)>(receivingChainKey));
+        std::tie(rstate.receivingChainKey, mk) = util::kcut<LHS, RHS>(HKDF::KDF<(LHS + RHS)>(rstate.receivingChainKey));
         receiveSequence++;
         return mk;
     }
@@ -252,28 +278,47 @@ namespace gcrypt::session
         if (!lid.has_value())
             return ratchet_failed(RatchetFailureType::STORAGE_FAILED, "Could not decrypt data. IStore failed to fetch local keys.");
 
-        // only keep public key.
-        xckey lid_p;
-        std::copy(lid->begin(), lid->begin() + typebytes(xckey), lid_p.begin());
+        ratchet_state cstate = state();
 
-        constexpr std::string_view ver_str = GCRYPT_VERSION_STRING;
-        static key<ver_str.size()> ver;
-        std::memcpy(ver.data(), ver_str.data(), ver_str.size());
+        try
+        {
+            // only keep public key.
+            xckey lid_p;
+            std::copy(lid->begin(), lid->begin() + typebytes(xckey), lid_p.begin());
 
-        auto AD = util::kconcat(ver, lid_p, remoteIdentityKey);
+            constexpr std::string_view ver_str = GCRYPT_VERSION_STRING;
+            static key<ver_str.size()> ver;
+            std::memcpy(ver.data(), ver_str.data(), ver_str.size());
 
-        auto header = get_header(data);
-        auto mk     = ratchet_receive_key(header);
+            auto AD = util::kconcat(ver, rstate.remoteIdentityKey, lid_p);
 
-        if (!mk)
-            return ratchet_failed(RatchetFailureType::BAD_DECRYPT, "Ratchet step could not receive key from header.");
+            if (data.size() < typebytes(message_header))
+                return ratchet_failed(RatchetFailureType::MALFORMED_INPUT, "Insufficient bytes in byte array to cover header size.");
+            
+            auto header = get_header(data);
+            auto mk     = ratchet_receive_key(header);
 
-        bytespan ciphertext = data.subspan(GCRYPT_HEADER_LEN);
+            if (!mk)
+            {
+                rollback_state(cstate);
+                return ratchet_failed(RatchetFailureType::BAD_DECRYPT, "Ratchet step could not receive key from header.");
+            }
+            bytespan ciphertext = data.subspan(GCRYPT_HEADER_LEN);
 
-        auto d = AEAD::decrypt(ciphertext, AD, *mk);
-        if (!d)
-            return ratchet_failed(RatchetFailureType::BAD_DECRYPT, "AEAD Protocol failed decrypt.");
-        return *d;     
+            auto d = AEAD::decrypt(ciphertext, AD, *mk);
+            if (!d)
+            {
+                rollback_state(cstate);
+                return ratchet_failed(RatchetFailureType::BAD_DECRYPT, "AEAD Protocol failed decrypt.");
+            }
+
+            commit_state();
+            return *d;
+        }catch(std::exception& e)
+        {
+            rollback_state(cstate);
+            return ratchet_failed(RatchetFailureType::BAD_DECRYPT, e.what());
+        }
     }
 
     std::optional<xckey> messaging_session::try_skipped_msg_keys(const message_header& header)
@@ -297,19 +342,19 @@ namespace gcrypt::session
         // TODO
         if (receiveSequence + GCRYPT_SESSION_MAX_KEY_SKIP < until)
             return RatchetStepError(RatchetFailureType::MAX_SKIP_REACHED, "Max skip reached.");
-        if (receivingChainKey.data() != nullptr)
+        if (rstate.receivingChainKey.data() != nullptr)
             while (receiveSequence < until)
             {
-                constexpr size_t LHS = varbytes(receivingChainKey), RHS = varbytes(skipped_message_key::messageKey);
-                const auto kdfout = HKDF::KDF<(LHS + RHS)>(receivingChainKey);
+                constexpr size_t LHS = varbytes(rstate.receivingChainKey), RHS = varbytes(skipped_message_key::messageKey);
+                const auto kdfout = HKDF::KDF<(LHS + RHS)>(rstate.receivingChainKey);
                 
                 skipped_message_key skipped
                 {
-                    .ratchetPublicKey = remoteRatchetKey,
+                    .ratchetPublicKey = rstate.remoteRatchetKey,
                     .sequenceNumber = receiveSequence
                 };
 
-                std::tie(receivingChainKey, skipped.messageKey) = util::kcut<LHS, RHS>(kdfout);
+                std::tie(rstate.receivingChainKey, skipped.messageKey) = util::kcut<LHS, RHS>(kdfout);
 
                 skippedKeys.push_back(std::move(skipped));
                 receiveSequence++;
@@ -325,12 +370,12 @@ namespace gcrypt::session
             throw newDH.error();
 
         // perform ratchet step again
-        localRatchetKey = newDH.value();
-        xckey dhOut = X25519::ssecret(localRatchetKey.Private, remoteRatchetKey);
+        rstate.localRatchetKey = newDH.value();
+        xckey dhOut = X25519::ssecret(rstate.localRatchetKey.Private, rstate.remoteRatchetKey);
 
         // generate keys for next sending
         // now assign to sendingchainkey
-        std::tie(rootKey, sendingChainKey) = HKDF::KDF_rk(rootKey, dhOut);
+        std::tie(rstate.rootKey, rstate.sendingChainKey) = HKDF::KDF_rk(rstate.rootKey, dhOut);
         return std::nullopt;
     }
     ratchet_step_status messaging_session::dh_ratchet(const message_header& header)
@@ -339,11 +384,11 @@ namespace gcrypt::session
         sendSequence = 0;
         receiveSequence = 0;
 
-        remoteRatchetKey = header.ratchet;
+        rstate.remoteRatchetKey = header.ratchet;
 
-        xckey dhOut = X25519::ssecret(localRatchetKey.Private, remoteRatchetKey);
+        xckey dhOut = X25519::ssecret(rstate.localRatchetKey.Private, rstate.remoteRatchetKey);
 
-        std::tie(rootKey, receivingChainKey) = HKDF::KDF_rk(rootKey, dhOut);
+        std::tie(rstate.rootKey, rstate.receivingChainKey) = HKDF::KDF_rk(rstate.rootKey, dhOut);
 
         return dhstep();
     }

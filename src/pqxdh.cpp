@@ -131,6 +131,7 @@ namespace gcrypt::pqxdh
         return true;
     }
     std::optional<session_init_result> create_outbound_session(
+                                            const std::string& recipientId,
                                             const xckeypair& localIdentityKey,
                                             const xckey& identityToVerifyAgainst,
                                             const foreign_prekey_bundle& keys
@@ -176,6 +177,7 @@ namespace gcrypt::pqxdh
         // continue execution
         // @note: Could be a risk to call this function ? could be called and returned a valid session regardless of bundle verification.
         return _internal::finalize_outbound_session(
+                                                recipientId,
                                                 localIdentityKey.Public,
                                                 EK.Public,
                                                 PQPK.cipherText,
@@ -183,6 +185,7 @@ namespace gcrypt::pqxdh
     }
 
     std::optional<session::messaging_session> create_inbound_session(
+                        const std::string&                   recipientId,
                         const xckeypair&                     localIdentityKey,
                         const xckey&                         usedPrivateSignedPreKey,
                         const std::optional<xckey>&          usedPrivateOneTimePreKey,
@@ -213,9 +216,9 @@ namespace gcrypt::pqxdh
         { return std::nullopt; }
 
         // Initialize Double Ratchet session and return
-        return session::messaging_session(handshake.identityKey, handshake.ephermoralKey, extract);
+        return session::messaging_session(recipientId, handshake.identityKey, handshake.ephermoralKey, extract);
     }
-    std::optional<session::messaging_session> create_inbound_session(const initial_message_handshake& handshake)
+    std::optional<session::messaging_session> create_inbound_session(const std::string& recipientId, const initial_message_handshake& handshake)
     {
         GCRYPT_ASSERT_STORE();
     #ifndef GCRYPT_NOSTORE
@@ -261,7 +264,8 @@ namespace gcrypt::pqxdh
                 return std::nullopt;
 
         
-        return create_inbound_session(localIdentityKey,
+        return create_inbound_session(recipientId,
+                                      localIdentityKey,
                                       usedPrivateSignedPreKey,
                                       has_usedPrivateOneTimePreKey ? (std::optional<xckey>)usedPrivateOneTimePreKey : std::nullopt,
                                       usedPrivateQuantumPreKey,

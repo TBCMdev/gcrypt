@@ -344,7 +344,7 @@ GCRYPT_LIB_JNI_FUNC(refill)(JNI_ENTRY_PCONTEXT, jint numKeys)
 
 
 // =============================================================================
-// 1. New Session (First-time contact)
+// New Session (First-time contact)
 // =============================================================================
 /// @brief Attempts to make a new session message handshake 
 ///        given the foreign bundle received by the server.
@@ -355,7 +355,8 @@ GCRYPT_LIB_JNI_FUNC(refill)(JNI_ENTRY_PCONTEXT, jint numKeys)
 /// @return Returns null if something went wrong, or if the signatures were invalid.
 GCRYPT_JNI_FUNC_SIG(jobject, gcrypt::session_init_result)
 GCRYPT_LIB_JNI_FUNC(initializeNewSession)(
-    JNI_ENTRY_PCONTEXT, 
+    JNI_ENTRY_PCONTEXT,
+    jstring recipientId,
     JNI_OBJREF(gcrypt::foreign_prekey_bundle) foreignBundle)
 {
     if (!JNI_SESSION)
@@ -365,9 +366,10 @@ GCRYPT_LIB_JNI_FUNC(initializeNewSession)(
     if (!bundle.has_value()) {
         return nullptr;
     }
+    const char* rid = env->GetStringUTFChars(recipientId, nullptr);
 
     // New contact: Verify signatures directly against the bundle's identity key (TOFU)
-    auto result = create_outbound_session(JNI_SESSION->IdentityKey, bundle->identityKey, *bundle);
+    auto result = create_outbound_session(rid, JNI_SESSION->IdentityKey, bundle->identityKey, *bundle);
     if (!result.has_value()) {
         return nullptr;
     }
@@ -376,7 +378,7 @@ GCRYPT_LIB_JNI_FUNC(initializeNewSession)(
 }
 
 // =============================================================================
-// 2. Existing Session (Known contact / Stored Identity Key)
+// Existing Session (Known contact / Stored Identity Key)
 // =============================================================================
 /// @brief Attempts to make a new session message handshake 
 ///        given the foreign bundle received by the server, from an existing user (i.e. you have established conections with them before).
@@ -388,7 +390,8 @@ GCRYPT_LIB_JNI_FUNC(initializeNewSession)(
 /// @return Returns null if something went wrong, or if the signatures were invalid.
 GCRYPT_JNI_FUNC_SIG(jobject, gcrypt::session_init_result)
 GCRYPT_LIB_JNI_FUNC(initializeExistingSession)(
-    JNI_ENTRY_PCONTEXT, 
+    JNI_ENTRY_PCONTEXT,
+    jstring recipientId,
     jbyteArray _longTermIdentityKey,
     JNI_OBJREF(gcrypt::foreign_prekey_bundle) foreignBundle)
 {
@@ -404,9 +407,10 @@ GCRYPT_LIB_JNI_FUNC(initializeExistingSession)(
     if (!longTermIdentityKey.has_value()) {
         return nullptr;
     }
+    const char* rid = env->GetStringUTFChars(recipientId, nullptr);
 
     // Existing contact: Verify signatures against our locally trusted identity key
-    auto result = create_outbound_session(JNI_SESSION->IdentityKey, *longTermIdentityKey, *bundle);
+    auto result = create_outbound_session(rid, JNI_SESSION->IdentityKey, *longTermIdentityKey, *bundle);
     if (!result.has_value()) {
         return nullptr;
     }
@@ -415,12 +419,13 @@ GCRYPT_LIB_JNI_FUNC(initializeExistingSession)(
 }
 
 // =============================================================================
-// 3. Processing Incoming Handshake (Bob / Recipient side)
+// Processing Incoming Handshake (Bob / Recipient side)
 // =============================================================================
 /// @brief Attempts to make a new session from the initial handshape received from a user.
 GCRYPT_JNI_FUNC_SIG(jobject, gcrypt::gcrypt_messaging_session)
 GCRYPT_LIB_JNI_FUNC(handleInitialHandshake)(
     JNI_ENTRY_PCONTEXT,
+    jstring recipientId,
     JNI_OBJREF(gcrypt::initial_message_handshake) message)
 {
     if (!JNI_SESSION)
@@ -430,8 +435,9 @@ GCRYPT_LIB_JNI_FUNC(handleInitialHandshake)(
     if (!handshakeMsg.has_value()) {
         return nullptr;
     }
+    const char* rid = env->GetStringUTFChars(recipientId, nullptr);
 
-    auto session = create_inbound_session(*handshakeMsg);
+    auto session = create_inbound_session(rid, *handshakeMsg);
     if (!session.has_value())
         return nullptr;
     return gcrypt::jniOM::from::messaging_session(JNI_CONTEXT, *session);
@@ -593,7 +599,7 @@ public:
         env->GetByteArrayRegion(jBlob, 0, len, reinterpret_cast<jbyte*>(blob.data()));
         env->DeleteLocalRef(jBlob);
 
-        auto session = gcrypt::session::messaging_session::from_bytes(blob);
+        auto session = gcrypt::session::messaging_session::from_bytes(recipient_id, blob);
         if (!session.has_value())
             return std::nullopt;
         return *session;

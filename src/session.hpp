@@ -15,7 +15,7 @@ namespace gcrypt::session
 {
     struct skipped_message_key
     {
-        sizedecl(bytesize<xckey>() + sizeof(uint32_t) + bytesize<key<32>>());
+        sizedecl(typebytes(xckey) + typebytes(uint32_t) + typebytes(key<32>));
 
         xckey ratchetPublicKey;  // The remote ratchet key for this chain
         key<32> messageKey;      // Unused derived message key
@@ -31,6 +31,8 @@ namespace gcrypt::session
 
     struct message_header
     {
+        sizedecl(typebytes(xckey) + typebytes(uint32_t) * 2);
+
         xckey ratchet;
         uint32_t cmn; // chain message number
         uint32_t cpn; // chain's previous number
@@ -47,7 +49,9 @@ namespace gcrypt::session
         STORAGE_FAILED,
         MAX_SKIP_REACHED,
         KEY_GEN_ERROR,
-        BAD_DECRYPT // for decrypt ratchet step only
+        BAD_DECRYPT, // for decrypt ratchet step only
+        BAD_ENCRYPT,
+        MALFORMED_INPUT
     };
 
     struct RatchetStepError : std::runtime_error
@@ -81,27 +85,34 @@ namespace gcrypt::session
     /// @brief Active Double Ratchet session state for a specific peer
     struct messaging_session
     {
-        
         // Denoted as minimum size. This does not include skippedKeys, but includes the length of skippedKeys.
-        sizedecl(bytesize<xckey>() * 2 +
-                 bytesize<key<32>>() * 3 + sizeof(uint32_t) * 4 + 
-                 bytesize<xckeypair>());
+        sizedecl(typebytes(xckey) * 2 + typebytes(key<32>) * 3
+               + typebytes(uint32_t) * 4 + typebytes(xckeypair));
 
         /// @brief Attempts to create a messaging_session from bytes, otherwise returning
         ///        a convert_exception if something went wrong.
         /// @param span the span of bytes.
         /// @return the expected object.
-        static util::convert_result<messaging_session> from_bytes(const fixed_bytespan& bytes);
+        static util::convert_result<messaging_session> from_bytes(const std::string& recipientId, const fixed_bytespan& bytes);
         bytedata                                       to_bytes() const;
 
-        xckey remoteIdentityKey;             // Remote verified long-term Public Identity Key
-        
-        key<32> rootKey;                     // Root Key (RK) - updated on every DH ratchet turn
-        key<32> sendingChainKey;             // Sending Chain Key (CKs) - ratchets on every sent msg
-        key<32> receivingChainKey;           // Receiving Chain Key (CKr) - ratchets on every rcvd msg
+        typedef struct
+        {
+            xckey remoteIdentityKey;             // Remote verified long-term Public Identity Key
+            
+            key<32> rootKey;                     // Root Key (RK) - updated on every DH ratchet turn
+            key<32> sendingChainKey;             // Sending Chain Key (CKs) - ratchets on every sent msg
+            key<32> receivingChainKey;           // Receiving Chain Key (CKr) - ratchets on every rcvd msg
+            
+            xckeypair localRatchetKey;           // Our current active DH key pair (DHs)
+            xckey remoteRatchetKey;              // Remote current active DH public key (DHr)
 
-        xckeypair localRatchetKey;           // Our current active DH key pair (DHs)
-        xckey remoteRatchetKey;              // Remote current active DH public key (DHr)
+            std::vector<skipped_message_key> stagedSkippedKeys;
+        } ratchet_state;
+
+        ratchet_state rstate;
+
+        const std::string identifier;
 
         uint32_t sendSequence{0};            // Ns: Messages sent in current sending chain
         uint32_t receiveSequence{0};         // Nr: Messages received in current receiving chain
@@ -109,6 +120,16 @@ namespace gcrypt::session
 
         std::vector<skipped_message_key> skippedKeys; // Cache for out-of-order arrivals
 
+        /// @brief Returns the current state of the ratcheting process.
+        inline ratchet_state state() { return rstate; }
+
+        /// @brief Rollsback the ratchet state of the session.
+        /// @note Because the ratchet_state contains a lot of keys, this is an expensive copy operation.
+        inline void rollback_state(const ratchet_state& _rstate)
+        { rstate = _rstate; }
+        /// @brief Commits the ratchet state to the main state of the object.
+        ///        Only call this if the most recent ratcheting step was a success, and you want to commit the results.
+        void commit_state();
 
         /// @brief Constructs a payload in byte form that can be sent to the recipient
         ///        of this messaging session.
@@ -127,20 +148,20 @@ namespace gcrypt::session
         /// @param SK Secret Key
         /// @param PeerDHPublicKey DH Public Key
         /// @param masterSecretKey The secret key
-        messaging_session(const xckey& SK, const xckey& PeerDHPublicKey, const key<32>& masterSecretKey);
+        messaging_session(const std::string& recipientId, const xckey& SK, const xckey& PeerDHPublicKey, const key<32>& masterSecretKey);
 
         /// @brief Constructs a new messaging session given the local users' Local Ratchet Keys(LKR).
         /// @param SK The agreed upon secret key. 
         /// @param LRK The Local Ratchet Keypair
-        messaging_session(const xckey& SK, const xckeypair& LRK, const key<32>& masterSecretKey);
+        messaging_session(const std::string& recipientId, const xckey& SK, const xckeypair& LRK, const key<32>& masterSecretKey);
 
-        /// @brief Constructs an empty messaging_session
-        static inline messaging_session make_empty()
+        /// @brief Constructs an empty messaging_session for the given recipient
+        static inline messaging_session make_empty(const std::string& recipientId)
         {
-            return messaging_session();
+            return messaging_session(recipientId);
         }
     protected:
-        messaging_session()
+        messaging_session(const std::string& recipientId)
         {}
 #ifndef GCRYPT_EXPOSE
     protected:

@@ -85,6 +85,7 @@ namespace gcrypt::pqxdh
         ///        session creation. Not to be used externally.
         template<std::size_t _SecretKeyBytes>
         std::optional<session_init_result> finalize_outbound_session(
+                                    const std::string&           recipientId,
                                     const xckey&                 localPublicIdentityKey,
                                     const xckey&                 publicEphemeralKey,
                                     const key<MLKEM_CTB>&        cipherText,
@@ -117,7 +118,7 @@ namespace gcrypt::pqxdh
 
             return session_init_result
             {
-                .session = session::messaging_session(keys.identityKey, keys.signedPreKey, KDFSecretKey),
+                .session = session::messaging_session(recipientId, keys.identityKey, keys.signedPreKey, KDFSecretKey),
                 .handshakeMessage = std::move(handshake)
             };
         }
@@ -203,6 +204,7 @@ namespace gcrypt::pqxdh
     /// @brief Attempts to create an outbound session, by verifying the foreign bundle
     ///        and initializing the keys needed to complete the pqxdh handshake.
     std::optional<session_init_result> create_outbound_session(
+                                                const std::string& recipientId,
                                                 const xckeypair& localIdentityKey,
                                                 const xckey& identityToVerifyAgainst,
                                                 const foreign_prekey_bundle& keys
@@ -214,11 +216,12 @@ namespace gcrypt::pqxdh
     /// @param handshake The incoming handshake
     /// @return The session if it was created.
 GCRYPT_FUNC_USES_STORAGE
-    std::optional<session::messaging_session> create_inbound_session(const initial_message_handshake& handshake);
+    std::optional<session::messaging_session> create_inbound_session(const std::string& recipientId, const initial_message_handshake& handshake);
     /// @brief Attempts to create a session from an inbound initial_message_handshake object.
     /// @note This function does not query storage to fetch the used private keys, as they are passed as arguments.
     /// @return The session if it was created.
     std::optional<session::messaging_session> create_inbound_session(
+                                    const std::string&                   recipientId,
                                     const xckeypair&                     localIdentityKey,
                                     const xckey&                         usedPrivateSignedPreKey,
                                     const std::optional<xckey>&          usedPrivateOneTimePreKey,
