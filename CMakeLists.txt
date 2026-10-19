@@ -13,6 +13,9 @@ add_compile_definitions(
     MLK_CONFIG_NAMESPACE_PREFIX=mlkimpl
     )
 
+# Optional
+# add_compile_definitions(GCRYPT_TRACE)
+
 FetchContent_Declare(
     mlkem_native
     GIT_REPOSITORY https://github.com/pq-code-package/mlkem-native.git

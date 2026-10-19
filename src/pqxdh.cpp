@@ -137,6 +137,7 @@ namespace gcrypt::pqxdh
                                             const foreign_prekey_bundle& keys
                                                               )
     {
+        init_trace();
         if (!verify_foreign_bundle(identityToVerifyAgainst, keys))
             return std::nullopt;
 
@@ -174,6 +175,7 @@ namespace gcrypt::pqxdh
         }catch(const std::runtime_error& HKDF_extract_error)
         { return std::nullopt; }
 
+        disable_trace();
         // continue execution
         // @note: Could be a risk to call this function ? could be called and returned a valid session regardless of bundle verification.
         return _internal::finalize_outbound_session(
@@ -193,6 +195,7 @@ namespace gcrypt::pqxdh
                         const initial_message_handshake&     handshake
                         )
     {
+        init_trace();
         const xckey PQSS = MLKEM_32::decapsulate(handshake.cipherText, usedPrivateQuantumPreKey);
 
         const xckey DH_1 = X25519::ssecret(usedPrivateSignedPreKey, handshake.identityKey);
@@ -215,12 +218,14 @@ namespace gcrypt::pqxdh
         }catch(const std::runtime_error& HKDF_extract_error)
         { return std::nullopt; }
 
+        disable_trace();
         // Initialize Double Ratchet session and return
         return session::messaging_session(recipientId, handshake.identityKey, handshake.ephermoralKey, extract);
     }
     std::optional<session::messaging_session> create_inbound_session(const std::string& recipientId, const initial_message_handshake& handshake)
     {
         GCRYPT_ASSERT_STORE();
+        init_trace();
     #ifndef GCRYPT_NOSTORE
 
         if (handshake.usedPreKeys.size() < 1)
@@ -263,7 +268,7 @@ namespace gcrypt::pqxdh
                 )
                 return std::nullopt;
 
-        
+        disable_trace();
         return create_inbound_session(recipientId,
                                       localIdentityKey,
                                       usedPrivateSignedPreKey,

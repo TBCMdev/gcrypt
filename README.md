@@ -93,3 +93,24 @@ Some exposed methods are implementation methods and do not retain sufficient doc
 of the underlying implementations before using them.
 
 Otherwise, these methods remain hidden, usually defined as `protected`. This means that for the most part, you can inherit and overload these methods, regardless of this macro.
+
+#### `GCRYPT_DEBUG`
+
+Includes helpful tools and functions for debugging errors:
+
+- Defines stack trace functionality for major functions to trace where execution finished (return statements). You can also define this functionality seperately with `GCRYPT_TRACE`.
+
+#### `GCRYPT_TRACE`
+
+Defines stack trace functionality for major functions to trace where execution finished (return statements). Stack traces are only recorded for returns that are unexpected, i.e. errors.
+
+> To get nice stack traces, it is usually required to ensure your binaries are compiled with export symbols.
+
+#### `GCRYPT_LOG_TRACE`
+
+Defines functionality for major functions to log their trace to the console, specifically where the execution finished for these functions (return statements). These traces are only recorded for returns that are unexpected, i.e. errors.
+
+
+#### `GCRYPT_MAX_TRACE`
+
+Defines the max trace objects that can be stored before old ones are erased from the stack container.
