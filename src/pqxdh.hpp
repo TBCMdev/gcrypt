@@ -177,24 +177,32 @@ namespace gcrypt::pqxdh
             pkqiter++;
         }
 
+        xcsikey signedPreKey{};
+        signedPreKey.data = keys.SignedPreKey.Public;
+        signedPreKey.identifier = keys.SignedPreKey.Public.identifier;
+        signedPreKey.signature = XedDSA::sign32(
+            keys.IdentityKey.Private,
+            keys.SignedPreKey.Public.data,
+            Z_SPK
+        );
+
+        qpubsidkey signedQuantumPreKey{};
+        signedQuantumPreKey.data = keys.QuantumPreKey.Public;
+        signedQuantumPreKey.identifier = keys.QuantumPreKey.Public.identifier;
+        signedQuantumPreKey.signature = XedDSA::sign32(
+            keys.IdentityKey.Private,
+            keys.QuantumPreKey.Public.data,
+            Z_PQSPK
+        );
+
         return public_server_payload<_OneTimePreKeyCount>
         {
             .registration = registration,
             .deviceId     = deviceId,
 
             .identityKey    = keys.IdentityKey.Public,
-            .signedPreKey   = xcsikey 
-                            {
-                                .data        = keys.SignedPreKey.Public,
-                                .identifier  = keys.SignedPreKey.Public.identifier,
-                                .signature   = XedDSA::sign32(keys.IdentityKey.Private, keys.SignedPreKey.Public.data, Z_SPK)
-                            },
-            .quantumPreKey  = qpubsidkey 
-                            {
-                                .data        = keys.QuantumPreKey.Public,
-                                .identifier  = keys.QuantumPreKey.Public.identifier,
-                                .signature   = XedDSA::sign32(keys.IdentityKey.Private, keys.QuantumPreKey.Public.data, Z_PQSPK)
-                            },
+            .signedPreKey   = signedPreKey,
+            .quantumPreKey  = signedQuantumPreKey,
             .oneTimePreKeys              = pOtpk,
             .signedOneTimeQuantumPreKeys = pOtQpk
         };
