@@ -42,6 +42,7 @@ namespace gcrypt::pqxdh
         xcikeypair             SignedPreKey;
         qikeypair              QuantumPreKey;
 
+        // TODO: MAKE ORDERED
         std::unordered_map<uint32_t, xcikeypair> OneTimePreKeys;
         std::unordered_map<uint32_t, qikeypair>  OneTimeQuantumKeys;
     };
@@ -90,8 +91,7 @@ namespace gcrypt::pqxdh
                                     const xckey&                 publicEphemeralKey,
                                     const key<MLKEM_CTB>&        cipherText,
                                     const key<_SecretKeyBytes>&  KDFSecretKey,
-                                    const foreign_prekey_bundle& keys
-                                            )
+                                    const foreign_prekey_bundle& keys)
         {
 
             std::vector<uint32_t> usedPreKeys;
@@ -152,24 +152,29 @@ namespace gcrypt::pqxdh
         std::array<xcikey, _OneTimePreKeyCount> pOtpk;
         std::array<qsidkey, _OneTimePreKeyCount> pOtQpk;
         
+        auto pkiter  = keys.OneTimePreKeys.begin();
+        auto pkqiter = keys.OneTimeQuantumKeys.begin();
         for (std::size_t i = 0; i < _OneTimePreKeyCount; i++)
         {
-            const auto& okey = keys.OneTimePreKeys.at(i);
+            const auto& [pkid, okey] = *pkiter;
             pOtpk[i] = xcikey
             {
                 .data        = okey.Public,
                 .identifier  = okey.Public.identifier,
             };
 
-            const auto& qkey = keys.OneTimeQuantumKeys.at(i);
+            const auto& [pqkid, qkey] = *pkqiter;
             const key<64> Z_N   = keygen::random<64>();
 
-            pOtQpk[i] = qsidkey
-            {
-                .data       = qkey.Public,
-                .identifier = qkey.Public.identifier,
-                .signature  = XedDSA::sign32(keys.IdentityKey.Private, qkey.Public.data, Z_N)
-            };
+            qsidkey k{};
+            k.data       = qkey.Public;
+            k.identifier = qkey.Public.identifier;
+            k.signature  = XedDSA::sign32(keys.IdentityKey.Private, qkey.Public.data, Z_N);
+
+            pOtQpk[i] = std::move(k);
+
+            pkiter++;
+            pkqiter++;
         }
 
         return public_server_payload<_OneTimePreKeyCount>

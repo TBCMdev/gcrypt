@@ -40,7 +40,7 @@
 
 #pragma region JNI_InbuildMappings
     #define JNI_CONSTRUCTOR_NAME "<init>"
-    #define JAVA_LANG_PACKAGE    "java/util/"
+    #define JAVA_LANG_PACKAGE    "java/lang/"
 
     #define JAVA_OBJECT_NAME     "Object"
     #define JAVA_OBJECT_PATH     JAVA_LANG_PACKAGE JAVA_OBJECT_NAME
