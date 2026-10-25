@@ -1,12 +1,10 @@
 #include "pqxdh.hpp"
-
 #include "util.hpp"
 #include "keygen.hpp"
 namespace gcrypt::pqxdh
 {
     local_key_bundle make_lkb(uint32_t deviceId)
     {
-        GCRYPT_ASSERT_STORE();
         local_key_bundle out{};
 
         auto IdentityKeyResult   = keygen::Ed25519 ::make_pair();
@@ -117,18 +115,20 @@ namespace gcrypt::pqxdh
     }
     bool verify_foreign_bundle(const xckey& userIdentityKey, const foreign_prekey_bundle& bundle)
     {
+        init_trace();
         if (!util::kmatch(userIdentityKey, bundle.identityKey))
-            return false;
+            return gtrace(false);
 
         if (!XedDSA::verify32(userIdentityKey, bundle.signedPreKey.data, bundle.signedPreKey.signature))
-            return false;
+            return gtrace(false);
 
         // only check signature if it is qsidkey
         if (const auto* signedQKey = std::get_if<qsidkey>(&bundle.qpubsidkey))
+        {
             if (!XedDSA::verify32(userIdentityKey, signedQKey->data, signedQKey->signature))
-                return false;
-                
-        return true;
+                return gtrace(false);
+        }
+        return gtrace(true);
     }
     std::optional<session_init_result> create_outbound_session(
                                             const std::string& recipientId,
@@ -139,12 +139,12 @@ namespace gcrypt::pqxdh
     {
         init_trace();
         if (!verify_foreign_bundle(identityToVerifyAgainst, keys))
-            return std::nullopt;
+            return gtrace(std::nullopt);
 
         const auto _EK = keygen::X25519::make_pair();
 
         if (!_EK.has_value())
-            return std::nullopt;
+            return gtrace(std::nullopt);
 
         const auto EK = _EK.value();
 
@@ -173,17 +173,16 @@ namespace gcrypt::pqxdh
                 SK = HKDF::KDF<32>(input);
             }
         }catch(const std::runtime_error& HKDF_extract_error)
-        { return std::nullopt; }
+        { return gtrace(std::nullopt); }
 
-        disable_trace();
         // continue execution
         // @note: Could be a risk to call this function ? could be called and returned a valid session regardless of bundle verification.
-        return _internal::finalize_outbound_session(
+        return gtrace( _internal::finalize_outbound_session(
                                                 recipientId,
                                                 localIdentityKey.Public,
                                                 EK.Public,
                                                 PQPK.cipherText,
-                                                SK, keys);
+                                                SK, keys));
     }
 
     std::optional<session::messaging_session> create_inbound_session(
@@ -216,11 +215,10 @@ namespace gcrypt::pqxdh
                 extract = HKDF::KDF<32>(input);
             }
         }catch(const std::runtime_error& HKDF_extract_error)
-        { return std::nullopt; }
+        { return gtrace(std::nullopt); }
 
-        disable_trace();
         // Initialize Double Ratchet session and return
-        return session::messaging_session(recipientId, handshake.identityKey, handshake.ephermoralKey, extract);
+        return gtrace(session::messaging_session(recipientId, handshake.identityKey, handshake.ephermoralKey, extract));
     }
     std::optional<session::messaging_session> create_inbound_session(const std::string& recipientId, const initial_message_handshake& handshake)
     {
@@ -229,7 +227,7 @@ namespace gcrypt::pqxdh
     #ifndef GCRYPT_NOSTORE
 
         if (handshake.usedPreKeys.size() < 1)
-            return std::nullopt;
+            return gtrace(std::nullopt);
 
         xckeypair                     localIdentityKey;
         if (
@@ -238,7 +236,7 @@ namespace gcrypt::pqxdh
             util::load_keyb_s(*pik, localIdentityKey.Public)                  ||
             util::load_keyb_s(*pik, localIdentityKey.Private, typebytes(xckey))
             )
-            return std::nullopt;
+            return gtrace(std::nullopt);
         
         xckey                         usedPrivateSignedPreKey;
         if (
@@ -246,7 +244,7 @@ namespace gcrypt::pqxdh
             !spk.has_value()                                                ||
             util::load_keyb_s(*spk, usedPrivateSignedPreKey, typebytes(xckey))
             )
-            return std::nullopt;
+            return gtrace(std::nullopt);
 
         bool has_usedPrivateOneTimePreKey = handshake.usedPreKeys.size() > 1;
         xckey                         usedPrivateOneTimePreKey;
@@ -258,7 +256,7 @@ namespace gcrypt::pqxdh
                 !opk.has_value()                                                ||
                 util::load_keyb_s(*opk, usedPrivateOneTimePreKey, typebytes(xckey))
                 )
-                return std::nullopt;
+                return gtrace(std::nullopt);
         }
         key<MLKEM_SKB>                usedPrivateQuantumPreKey;
         if (
@@ -266,17 +264,16 @@ namespace gcrypt::pqxdh
                 !qpk.has_value()                                                ||
                 util::load_keyb_s(*qpk, usedPrivateQuantumPreKey, MLKEM_SKB)
                 )
-                return std::nullopt;
+                return gtrace(std::nullopt);
 
-        disable_trace();
-        return create_inbound_session(recipientId,
+        return gtrace(create_inbound_session(recipientId,
                                       localIdentityKey,
                                       usedPrivateSignedPreKey,
                                       has_usedPrivateOneTimePreKey ? (std::optional<xckey>)usedPrivateOneTimePreKey : std::nullopt,
                                       usedPrivateQuantumPreKey,
-                                      handshake);
+                                      handshake));
     #else
-        return std::nullopt;
+        return gtrace(std::nullopt);
     #endif
     }
 }

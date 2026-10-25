@@ -12,6 +12,8 @@
 #include <format>
 #include <ranges>
 #include <sodium.h>
+#include <sstream>
+#include <iomanip>
 #include "bytesize.hpp"
 
 
@@ -79,7 +81,7 @@ namespace gcrypt
 
         ~key() { kill(); }
 
-        key& operator=(key&& other) noexcept
+        key& operator = (key&& other) noexcept
         {
             if (this != &other)
             {
@@ -89,7 +91,7 @@ namespace gcrypt
             }
             return *this;
         }
-        key& operator=(const key& other)
+        key& operator = (const key& other)
         {
             if (this != &other)
             {
@@ -98,6 +100,17 @@ namespace gcrypt
             }
             return *this;
         }
+        // template<std::size_t _OBytes>
+        // key operator | (const key<_OBytes>& o) const
+        // {
+        //     return util::kconcat(*this, o);
+        // }
+
+        // template<std::size_t _OBytes>
+        // key operator |= (const key<_OBytes>& o)
+        // {
+        //     *this = util::kconcat(*this, o);
+        // }
 
         /// @brief Sets the memory region of this key to all zeros.
         void kill() noexcept { sodium_memzero(data(), _Bytes); }
@@ -120,6 +133,14 @@ namespace gcrypt
         auto end() noexcept { return impl_storage.end(); }
         auto begin() const noexcept { return impl_storage.begin(); }
         auto end() const noexcept { return impl_storage.end(); }
+
+        inline std::string str() const
+        {
+            std::stringstream stream;
+            for(std::size_t i = 0; i < _Bytes; i++)
+                stream << std::hex << std::setfill('0') << std::setw(2) << static_cast<unsigned int>(impl_storage[i]) << " ";
+            return stream.str();
+        }
     };
 
     /// @brief The implementation of a generic keypair.

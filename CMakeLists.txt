@@ -1,49 +1,48 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.20)
 
 project(gcrypt C CXX)
 
 include(FetchContent)
 
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-add_compile_definitions(
-    MLK_CONFIG_PARAMETER_SET=1024
-    MLK_CONFIG_NAMESPACE_PREFIX=mlkimpl
-    )
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Optional
-# add_compile_definitions(GCRYPT_TRACE)
+add_compile_definitions(GCRYPT_LOG_TRACE)
+add_compile_options(-g)
 
+# mlkem-native
 FetchContent_Declare(
     mlkem_native
     GIT_REPOSITORY https://github.com/pq-code-package/mlkem-native.git
-    GIT_TAG        main
+    GIT_TAG        main   # TODO: pin to a release tag or commit hash
 )
 FetchContent_MakeAvailable(mlkem_native)
 
-find_path(MLKEM_NATIVE_INCLUDE_DIR
-    NAMES mlkem_native.h
-    PATHS
-        "${mlkem_native_SOURCE_DIR}"
-        "${mlkem_native_BINARY_DIR}"
-    PATH_SUFFIXES
-        mlkem
-        mlkem/native
-        mlkem_native
-        src
-        c
-        native
-    NO_DEFAULT_PATH
+add_library(mlkem_native STATIC
+    ${mlkem_native_SOURCE_DIR}/mlkem/mlkem_native.c
 )
 
-file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
+# Only needed if you enable the native backends (x86_64 / aarch64 asm).
+# Harmless otherwise, but uncomment when you set MLK_CONFIG_USE_NATIVE_BACKEND_*.
+# target_sources(mlkem_native PRIVATE
+#     ${mlkem_native_SOURCE_DIR}/mlkem/mlkem_native.S
+# )
+
+target_include_directories(mlkem_native PUBLIC
+    ${mlkem_native_SOURCE_DIR}/mlkem
 )
 
+target_compile_definitions(mlkem_native PUBLIC
+    MLK_CONFIG_PARAMETER_SET=1024
+    MLK_CONFIG_NAMESPACE_PREFIX=mlkimpl
+)
 
+# Platform libs
 set(PLATFORM_LIBS "")
 
 find_package(Threads REQUIRED)
@@ -53,6 +52,7 @@ if(WIN32)
     list(APPEND PLATFORM_LIBS ws2_32 crypt32 advapi32 user32)
 endif()
 
+# libsodium (bundled if present, otherwise system)
 set(SODIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/libsodium")
 
 if(EXISTS "${SODIUM_DIR}/include")
@@ -65,7 +65,7 @@ if(EXISTS "${SODIUM_DIR}/include")
     endif()
 
     set_target_properties(libsodium PROPERTIES
-        IMPORTED_LOCATION "${SODIUM_LIB_PATH}"
+        IMPORTED_LOCATION             "${SODIUM_LIB_PATH}"
         INTERFACE_INCLUDE_DIRECTORIES "${SODIUM_DIR}/include"
         INTERFACE_COMPILE_DEFINITIONS "SODIUM_STATIC"
     )
@@ -79,21 +79,27 @@ else()
         find_path(SODIUM_INCLUDE_DIR NAMES sodium.h REQUIRED)
         add_library(libsodium UNKNOWN IMPORTED)
         set_target_properties(libsodium PROPERTIES
-            IMPORTED_LOCATION "${SODIUM_LIB}"
+            IMPORTED_LOCATION             "${SODIUM_LIB}"
             INTERFACE_INCLUDE_DIRECTORIES "${SODIUM_INCLUDE_DIR}"
         )
     endif()
 endif()
 
-add_library(gcrypt STATIC
-    ${CORE_SOURCES}
+# gcrypt library
+file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
 )
 
-target_include_directories(gcrypt PRIVATE 
+add_library(gcrypt STATIC ${CORE_SOURCES})
+
+option(GCRYPT_NOSTORE "Disable storage capabilities" OFF)
+if(GCRYPT_NOSTORE)
+    target_compile_definitions(gcrypt PUBLIC GCRYPT_NOSTORE)
+endif()
+
+target_include_directories(gcrypt PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    "${MLKEM_NATIVE_INCLUDE_DIR}"
-    "${mlkem_native_SOURCE_DIR}"
-    "${mlkem_native_BINARY_DIR}"
 )
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/android/include")
@@ -102,9 +108,14 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/android/include")
     )
 endif()
 
-
-target_link_libraries(gcrypt PRIVATE 
-    libsodium 
-    mlkem_native 
+# PUBLIC: anything linking gcrypt also gets libsodium + mlkem_native
+# (include dirs, compile definitions and link flags propagate automatically).
+target_link_libraries(gcrypt PUBLIC
+    libsodium
+    mlkem_native
+    stdc++exp
     ${PLATFORM_LIBS}
 )
+
+add_executable(testbin tests/keys.cpp)
+target_link_libraries(testbin PRIVATE gcrypt stdc++exp)

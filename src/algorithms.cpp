@@ -2,11 +2,10 @@
 
 #include <cstring>
 #include <stdexcept>
-
+#include <iostream>
 #include "util.hpp"
 #include "hashing.hpp"
 #include "keygen.hpp"
-
 
 namespace gcrypt::Ed25519
 {
@@ -79,8 +78,9 @@ namespace gcrypt::XedDSA
 
             return A;
         }
-        bool sig_in_bounds(const xckey& mkPub, const xckey& R, const xckey& s)
+        bool sig_in_bounds(const xckey& U, const xckey& R, const xckey& s)
         {
+            init_trace();
             constexpr uint8_t P[GCRYPT_X25519_KEY_SIZE] = 
             {
                 0xED, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -88,16 +88,22 @@ namespace gcrypt::XedDSA
                 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
                 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F
             };
-            // Returns false if y >= p
-            if (sodium_compare(mkPub.data(), P, GCRYPT_X25519_KEY_SIZE) != -1)
-                return false;
-            
-            if ((R[GCRYPT_X25519_KEY_SIZE - 1] & 0x80) != 0)
-                return false;
-            if ((s[GCRYPT_X25519_KEY_SIZE - 1] & 0xE0) != 0)
-                return false;
+            // Returns false if U.y >= p
+            if (sodium_compare(U.data(), P, GCRYPT_X25519_KEY_SIZE) != -1)
+                return gtrace(false);
+            std::cout << R.str() << '\n';
 
-            return true;
+            // perform copy and verify R.y < p.
+            xckey Ry = R;
+            Ry[GCRYPT_ALG_ED25519_SIGNBYTE] &= 0x7F;
+
+            if (sodium_compare(Ry.data(), P, GCRYPT_X25519_KEY_SIZE) != -1)
+                return gtrace(false);
+                
+            if ((s[GCRYPT_ALG_ED25519_SIGNBYTE] & 0xE0) != 0)
+                return gtrace(false);
+
+            return gtrace(true);
         }
         xckey u_to_y(const xckey& U)
         {
@@ -121,6 +127,7 @@ namespace gcrypt::XedDSA
         {
             xckey umasked = Ed25519::ycoord(U);
             xckey P = u_to_y(umasked);
+            fe25519_tobytes()
 
             Ed25519::ycoord(&P);
 

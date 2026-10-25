@@ -1,12 +1,11 @@
 #pragma once
 #include <stdexcept>
 #include <expected>
+#include <version>
 
 #if !defined(__PRETTY_FUNCTION__) && !defined(__GNUC__)
     #define __PRETTY_FUNCTION__ __FUNCSIG__
 #endif
-// todo remove
-#define GCRYPT_DEBUG
 
 #if __cplusplus >= 202302L && !defined(GCRYPT_LOG_TRACE) && (defined(GCRYPT_DEBUG) || defined(GCRYPT_TRACE))
     #define GCRYPT_ENABLE_ALL_TRACING
@@ -16,7 +15,7 @@
     #define GCRYPT_ENABLE_TRACE_LOGGING
 #endif
 
-#ifdef GCRYPT_ENABLE_ALL_TRACING
+#if defined(GCRYPT_ENABLE_ALL_TRACING) && defined(__cpp_lib_stacktrace)
     #include <stacktrace>
     #include <mutex>
 
@@ -25,7 +24,8 @@
     #endif
 
     // Records the return stack trace
-    #define algreturn(...) { gcrypt::tracer.log(std::stacktrace::current()); return __VA_ARGS__; }
+    #define glog(...) gcrypt::tracer.log(__VA_ARGS__)
+    #define greturn(...) { glog(std::stacktrace::current()); return __VA_ARGS__; }
     namespace gcrypt
     {
         class execution_tracer
@@ -60,53 +60,46 @@
         inline execution_tracer tracer;
     }
 
-#elif defined(GCRYPT_ENABLE_TRACE_LOGGING)
+#elif defined(GCRYPT_ENABLE_TRACE_LOGGING) && defined(__cpp_lib_stacktrace)
     #include <stacktrace>
+    #include <iostream>
+    #define glog(...) std::cout << __VA_ARGS__ << '\n'
     // Prints the current stack trace, and returns the given parameters.
-    #define algreturn(...) { std::cout << std::stacktrace::current() << std::endl; return __VA_ARGS__;}
+    #define greturn(...) { glog(std::stacktrace::current()); return __VA_ARGS__;}
 #else
+    #define glog(...) 
     // No debug implementation defined: therefore just returns the arguments.
-    #define algreturn(...) return __VA_ARGS__;
+    #define greturn(...) return __VA_ARGS__;
 #endif
-
 
 #if defined(GCRYPT_ENABLE_TRACE_LOGGING) || defined(GCRYPT_ENABLE_ALL_TRACING)
 
     #define GCRYPT_SCOPED_TRACE_OBJ __trace_lock
     /// @brief initializes a trace_lock object which records when and where the underlying function exits (its stack trace).
     #define init_trace(...) gcrypt::trace_lock GCRYPT_SCOPED_TRACE_OBJ
-    /// @brief disables the tracing of the trace_lock object defined from initializing trace functionality.
-    #define disable_trace(...) GCRYPT_SCOPED_TRACE_OBJ.successful()
-    /// @brief enables the tracing of the trace_lock object defined from initializing trace functionality.
-    #define enable_trace(...) GCRYPT_SCOPED_TRACE_OBJ.unsuccessful()
-
+    #define gtrace(...) GCRYPT_SCOPED_TRACE_OBJ.trace(__VA_ARGS__, std::stacktrace::current())
     namespace gcrypt
     {
-        /// @brief Logs the stack trace when destructed, if the trace is unsuccessful.
+        /// @brief Logs the stack trace when prompted.
         class trace_lock
         {
-            bool _success = false;
+            std::shared_ptr<std::stacktrace> st;
         public:
             ~trace_lock()
-            { if (!_success) algreturn(); }
+            { if (st) glog(*st); }
             constexpr trace_lock() {};
 
-            /// @brief marks the trace as a non error, therefore no stack trace is logged.
-            constexpr inline void successful()
-            { _success = true; }
-            /// @brief marks the trace as an error, meaning on destruction the trace will be logged.
-            constexpr inline void unsuccessful()
-            { _success = false; }
+            template<typename T>
+            inline T trace(T val, const std::stacktrace& _st)
+            { st = std::make_shared<std::stacktrace>(_st); return val; }
         };
     }
     
 #else
     /// @brief does nothing; no tracing defined.
-    #define init_trace(...)
-    /// @brief does nothing; no tracing defined.
-    #define disable_trace(...)
-    /// @brief does nothing; no tracing defined.
-    #define enable_trace(...)
+    #define init_trace(...) 
+    #define gtrace(...) __VA_ARGS__
+    #define greturn(...) __VA_ARGS__
 #endif
 
 namespace gcrypt

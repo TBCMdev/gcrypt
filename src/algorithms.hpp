@@ -92,22 +92,23 @@ namespace gcrypt
                 return false;
 
             xckey A = impl::convert_mont(mkPub);
-            
             if (crypto_core_ed25519_is_valid_point(A.data()) == 0)
                 return false;
 
-            xckey h{};
+            xckey h{}, hA{};
             hashing::dhash hash = hashing::SHA(util::kconcat(R, A, M));
             crypto_core_ed25519_scalar_reduce(h.data(), hash.data());
 
             // r_check = sB - hA
             //         = s - h (memory wise)
-            impl::bpscale(s); // s = sB
+            impl::bpscale(&s); // s = sB
 
-            crypto_core_ed25519_scalar_mul(h.data(), h.data(), A.data()); // h = hA
+            if (crypto_scalarmult_ed25519_noclamp(hA.data(), h.data(), A.data()) != 0) // h = hA
+                return false;
 
             xckey r_check{};
-            crypto_core_ed25519_scalar_sub(r_check.data(), s.data(), h.data());
+            if (crypto_core_ed25519_sub(r_check.data(), s.data(), hA.data()) != 0)
+                return false;
 
             // ensure bytes equal (R == R_check)
             return util::kmatch(r_check, R);
