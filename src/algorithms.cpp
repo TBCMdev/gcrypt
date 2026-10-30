@@ -6,6 +6,7 @@
 #include "util.hpp"
 #include "hashing.hpp"
 #include "keygen.hpp"
+#include "keymath.hpp"
 
 namespace gcrypt::Ed25519
 {
@@ -50,8 +51,10 @@ namespace gcrypt::X25519
 
 namespace gcrypt::XedDSA
 {
+    
     namespace impl
     {
+
         xckey bpscale(const xckey& scalar)
         {
             xckey out{};
@@ -65,7 +68,7 @@ namespace gcrypt::XedDSA
         }
         xckeypair calculate_key_pair(const xckey& K)
         {
-            const xckey E  = bpscale(K);
+            const xckey E = bpscale(K);
             const bool Es = Ed25519::signbit(E);
             xckeypair A{};
 
@@ -80,7 +83,6 @@ namespace gcrypt::XedDSA
         }
         bool sig_in_bounds(const xckey& U, const xckey& R, const xckey& s)
         {
-            init_trace();
             constexpr uint8_t P[GCRYPT_X25519_KEY_SIZE] = 
             {
                 0xED, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -90,7 +92,7 @@ namespace gcrypt::XedDSA
             };
             // Returns false if U.y >= p
             if (sodium_compare(U.data(), P, GCRYPT_X25519_KEY_SIZE) != -1)
-                return gtrace(false);
+                return false;
             std::cout << R.str() << '\n';
 
             // perform copy and verify R.y < p.
@@ -98,36 +100,39 @@ namespace gcrypt::XedDSA
             Ry[GCRYPT_ALG_ED25519_SIGNBYTE] &= 0x7F;
 
             if (sodium_compare(Ry.data(), P, GCRYPT_X25519_KEY_SIZE) != -1)
-                return gtrace(false);
+                return false;
                 
             if ((s[GCRYPT_ALG_ED25519_SIGNBYTE] & 0xE0) != 0)
-                return gtrace(false);
+                return false;
 
-            return gtrace(true);
+            return true;
         }
+        
         xckey u_to_y(const xckey& U)
         {
-            // Constant 1
-            const xckey C1 = keygen::from_lebytes<GCRYPT_X25519_KEY_SIZE>((uint8_t)1);
+            using namespace gcrypt::kmath::xc32::impl;
 
-            xckey numerator{}; // Z = U - 1
-            crypto_core_ed25519_scalar_sub(numerator.data(), U.data(), C1.data());
-            xckey denominator{}; // Z = U - 1
-            crypto_core_ed25519_scalar_add(denominator.data(), U.data(), C1.data());
+            sliced numer, denom, dinv, u, c = {1};
 
-            if (crypto_core_ed25519_scalar_invert(denominator.data(), denominator.data()) != 0)
-                throw std::invalid_argument("Invalid scalar of ed25519 denominator (=0)");
-            
-            xckey result{};
-            crypto_core_ed25519_scalar_mul(result.data(), numerator.data(), denominator.data());
+            unpack(u, U);
 
-            return result;
+            sub(numer, u, c);
+            add(denom, u, c);
+
+            if (iszero(denom))
+                throw std::invalid_argument("u_to_y failed. Denominator of division = 0.");
+
+            inv(dinv, denom);
+            mul(denom, numer, dinv);
+
+            xckey out; pack(out, denom);
+
+            return out;
         }
         xckey convert_mont(const xckey& U)
         {
             xckey umasked = Ed25519::ycoord(U);
             xckey P = u_to_y(umasked);
-            fe25519_tobytes()
 
             Ed25519::ycoord(&P);
 

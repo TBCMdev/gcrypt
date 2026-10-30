@@ -8,7 +8,6 @@
 
 namespace gcrypt
 {
-
     namespace Ed25519
     {
         #define GCRYPT_ALG_ED25519_SIGNBYTE 31
@@ -83,17 +82,18 @@ namespace gcrypt
         template<std::size_t _MessageSize>
         bool verify32(const xckey& mkPub, const key<_MessageSize>& M, key<64> rcs)
         {
+            init_trace();
             // lower half of r concat s
             xckey R = util::kcpy<GCRYPT_X25519_KEY_SIZE, 64>(rcs);
             // upper half of r concat s
             xckey s = util::kcpy<GCRYPT_X25519_KEY_SIZE, 64>(rcs, GCRYPT_X25519_KEY_SIZE);
 
             if (!impl::sig_in_bounds(mkPub, R, s))
-                return false;
+                return gtrace(false);
 
             xckey A = impl::convert_mont(mkPub);
             if (crypto_core_ed25519_is_valid_point(A.data()) == 0)
-                return false;
+                return gtrace(false);
 
             xckey h{}, hA{};
             hashing::dhash hash = hashing::SHA(util::kconcat(R, A, M));
@@ -104,11 +104,11 @@ namespace gcrypt
             impl::bpscale(&s); // s = sB
 
             if (crypto_scalarmult_ed25519_noclamp(hA.data(), h.data(), A.data()) != 0) // h = hA
-                return false;
+                return gtrace(false);
 
             xckey r_check{};
             if (crypto_core_ed25519_sub(r_check.data(), s.data(), hA.data()) != 0)
-                return false;
+                return gtrace(false);
 
             // ensure bytes equal (R == R_check)
             return util::kmatch(r_check, R);

@@ -8,11 +8,11 @@ namespace gcrypt::pqxdh
         local_key_bundle out{};
 
         auto IdentityKeyResult   = keygen::Ed25519 ::make_pair();
-        if (!IdentityKeyResult.has_value())   throw keygen::descriptive_error(IdentityKeyResult.error());
+        if (!IdentityKeyResult.has_value())   throw keygen::generation_error(IdentityKeyResult.error());
         auto SignedPreKeyResult  = keygen::X25519  ::make_id_pair();
-        if (!SignedPreKeyResult.has_value())  throw keygen::descriptive_error(SignedPreKeyResult.error());
+        if (!SignedPreKeyResult.has_value())  throw keygen::generation_error(SignedPreKeyResult.error());
         auto QuantumPreKeyResult = keygen::MLKEM_32::make_id_pair();
-        if (!QuantumPreKeyResult.has_value()) throw keygen::descriptive_error(QuantumPreKeyResult.error());
+        if (!QuantumPreKeyResult.has_value()) throw keygen::generation_error(QuantumPreKeyResult.error());
 
         std::unordered_map<uint32_t, xcikeypair> OneTimePreKeys;
         OneTimePreKeys.reserve(GCRYPT_INITIAL_PREKEY_BUNDLE_COUNT);
@@ -20,7 +20,7 @@ namespace gcrypt::pqxdh
         for(int i = 0; i < GCRYPT_INITIAL_PREKEY_BUNDLE_COUNT; i++)
         {
             auto KeyPairResult = keygen::X25519::make_id_pair();
-            if (!KeyPairResult.has_value()) throw keygen::descriptive_error(KeyPairResult.error());
+            if (!KeyPairResult.has_value()) throw keygen::generation_error(KeyPairResult.error());
 
             auto val = KeyPairResult.value();
 
@@ -33,7 +33,9 @@ namespace gcrypt::pqxdh
         for(int i = 0; i < GCRYPT_INITIAL_PREKEY_BUNDLE_COUNT; i++)
         {
             auto KeyPairResult = keygen::MLKEM_32::make_id_pair();
-            if (!KeyPairResult.has_value()) throw keygen::descriptive_error(KeyPairResult.error());
+
+            
+            if (!KeyPairResult.has_value()) throw keygen::generation_error(KeyPairResult.error());
 
             auto val = KeyPairResult.value();
             OneTimeQuantumKeys.insert({util::keyid(val.Public.data), val});
@@ -69,7 +71,7 @@ namespace gcrypt::pqxdh
         {
             auto x_res = keygen::X25519::make_pair();
             if (!x_res.has_value()) 
-                throw keygen::descriptive_error(x_res.error());
+                throw keygen::generation_error(x_res.error());
 
             xckeypair x_pair = x_res.value();
             uint32_t  x_id   = util::keyid(x_pair.Public);
@@ -90,7 +92,7 @@ namespace gcrypt::pqxdh
 
             auto q_res = keygen::MLKEM_32::make_pair();
             if (!q_res.has_value()) 
-                throw keygen::descriptive_error(q_res.error());
+                throw keygen::generation_error(q_res.error());
 
             qkeypair q_pair = q_res.value();
             uint32_t q_id   = util::keyid(q_pair.Public);

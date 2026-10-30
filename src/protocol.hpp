@@ -235,4 +235,11 @@ namespace gcrypt
     using qikeypair    = ukeypair<MLKEM_PKB, MLKEM_SKB, idkey, key>;
     /// @brief quantum key with signature and identifier
     using qsidkey      = sidkey<MLKEM_CTB, GCRYPT_SIGNATURE_SIZE>;
+
+    /// @brief Initializes the gcrypt library. Must be called before any usage of this library.
+    /// @return 0 on success, otherwise an error code (for now it is the error code of sodium_init).
+    inline int init()
+    {
+        return sodium_init();
+    }
 }

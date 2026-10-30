@@ -60,10 +60,12 @@ namespace gcrypt::keygen
     {
 
         qkeypair out{};
-
-        if (mlkimpl_keypair(out.Public.data(), out.Private.data()) != 0)
+        int r;
+        if ((r = mlkimpl_keypair(out.Public.data(), out.Private.data())) != 0)
+        {
+            gdebugf("MLKEM make_pair() failed with return code of {}.", r);
             return std::unexpected(KeyGenError::LIBRARY_ERROR);
-        
+        }
         return out;
     }
     std::expected
@@ -73,9 +75,12 @@ namespace gcrypt::keygen
                 > MLKEM_32::make_id_pair()
     {
         qikeypair out{};
-
-        if (mlkimpl_keypair(out.Public.data.data(), out.Private.data()) != 0)
+        int r;
+        if ((r = mlkimpl_keypair(out.Public.data.data(), out.Private.data())) != 0)
+        {
+            gdebugf("MLKEM make_id_pair() failed with return code of {}.", r);
             return std::unexpected(KeyGenError::LIBRARY_ERROR);
+        }
         return out;
     }
 }

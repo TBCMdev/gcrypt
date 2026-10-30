@@ -11,7 +11,6 @@
 #include <tuple>
 
 
-
 namespace gcrypt::util
 {
     template<typename _T>

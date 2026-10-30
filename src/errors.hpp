@@ -7,6 +7,12 @@
     #define __PRETTY_FUNCTION__ __FUNCSIG__
 #endif
 
+#ifdef GCRYPT_DEBUG
+    #define gdebugf(s, ...) (std::cout << std::format(s, __VA_ARGS__) << '\n')
+#else
+    #define gdebugf(s, ...) 
+#endif
+
 #if __cplusplus >= 202302L && !defined(GCRYPT_LOG_TRACE) && (defined(GCRYPT_DEBUG) || defined(GCRYPT_TRACE))
     #define GCRYPT_ENABLE_ALL_TRACING
 #endif
@@ -121,6 +127,36 @@ namespace gcrypt
         convert_exception(const std::string& err) : std::logic_error(err)
                                         { };
     };
+    namespace keygen
+    {
+        enum class KeyGenError
+        {
+            LIBRARY_ERROR,
+            UNKNOWN_ALGORITHM,
+            UNKNOWN
+        };
+        inline constexpr const char* descriptive_error(const KeyGenError err)
+        {
+            switch(err)
+            {
+                case KeyGenError::LIBRARY_ERROR:
+                    return "Key Generation failed due to a library error.";
+                case KeyGenError::UNKNOWN_ALGORITHM:
+                    return "Key Generation failed due to lack of an algorithm implementation.";
+                default:
+                    return "Key Generation failed with an unknown error.";    
+            }
+        }
+        struct key_generation_exception : public std::runtime_error
+        {
+            key_generation_exception(KeyGenError err, int ec) : 
+                std::runtime_error(
+                    std::format("Err Code: {} - descriptive: {}", ec == 0 ? static_cast<int>(err) : ec, descriptive_error(err)
+                    )){}
+        };
+        inline key_generation_exception generation_error(const KeyGenError err, int ec = 0)
+        { return key_generation_exception(err, ec); }
+    }
 #define _ERR_STR "Conversion failed with execution: {}"
 
     inline convert_exception convert_failed() { return convert_exception(); };
@@ -132,7 +168,7 @@ namespace gcrypt
     inline std::unexpected<convert_exception> convert_error(const std::string& err) { return std::unexpected(convert_failed<_From, _To>(err)); };
     template<typename _From, typename _To>
     inline std::unexpected<convert_exception> convert_error() { return std::unexpected(convert_failed<_From, _To>()); };
-
+    
 #undef _ERR_STR
 
 }

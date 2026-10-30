@@ -3,34 +3,15 @@
 #include <algorithm>
 
 #include "protocol.hpp"
+#include "errors.hpp"
 
 namespace gcrypt::keygen
 {
-    enum class KeyGenError
-    {
-        LIBRARY_ERROR,
-        UNKNOWN_ALGORITHM,
-        UNKNOWN
-    };
-
-    constexpr const char* descriptive_error(const KeyGenError err)
-    {
-        switch(err)
-        {
-            case KeyGenError::LIBRARY_ERROR:
-                return "Key Generation failed due to a library error.";
-            case KeyGenError::UNKNOWN_ALGORITHM:
-                return "Key Generation failed due to lack of an algorithm implementation.";
-            default:
-                return "Key Generation failed with an unknown error.";    
-        }
-    }
-
     /// @brief Creates a key, setting a number of bytes starting with the first byte in little endian form.
     /// @tparam _Size The size of the key to create
     /// @tparam ..._Bytes the bytes to set
     template<std::size_t _Size, std::convertible_to<uint8_t>... _Bytes>
-    key<_Size> from_lebytes(_Bytes... bytes)
+    inline key<_Size> from_lebytes(_Bytes... bytes)
     {
         key<_Size> out{};
 
@@ -44,7 +25,7 @@ namespace gcrypt::keygen
     /// @tparam _Size The size of the key to create
     /// @tparam ..._Bytes the bytes to set
     template<std::size_t _Size, std::convertible_to<uint8_t> _ByteType>
-    constexpr key<_Size> filled(_ByteType byte)
+    inline constexpr key<_Size> filled(_ByteType byte)
     {
         key<_Size> out{};
 

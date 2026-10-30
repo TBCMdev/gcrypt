@@ -36,11 +36,16 @@ add_library(mlkem_native STATIC
 target_include_directories(mlkem_native PUBLIC
     ${mlkem_native_SOURCE_DIR}/mlkem
 )
-
+target_compile_definitions(mlkem_native PRIVATE MLK_CONFIG_CUSTOM_RANDOMBYTES)
+target_compile_options(mlkem_native PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/src/rng_decl.h)
+target_sources(mlkem_native PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/rng_decl.cpp")
 target_compile_definitions(mlkem_native PUBLIC
     MLK_CONFIG_PARAMETER_SET=1024
     MLK_CONFIG_NAMESPACE_PREFIX=mlkimpl
 )
+if (WIN32)
+    target_link_libraries(mlkem_native PUBLIC bcrypt)
+endif()
 
 # Platform libs
 set(PLATFORM_LIBS "")
@@ -58,7 +63,7 @@ set(SODIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/libsodium")
 if(EXISTS "${SODIUM_DIR}/include")
     add_library(libsodium STATIC IMPORTED)
 
-    if(WIN32 AND MSVC)
+    if(MSVC)
         set(SODIUM_LIB_PATH "${SODIUM_DIR}/lib/libsodium.lib")
     else()
         set(SODIUM_LIB_PATH "${SODIUM_DIR}/lib/libsodium.a")
@@ -90,12 +95,18 @@ file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
 )
+list(REMOVE_ITEM CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/rng_decl.cpp")
 
 add_library(gcrypt STATIC ${CORE_SOURCES})
 
 option(GCRYPT_NOSTORE "Disable storage capabilities" OFF)
+option(GCRYPT_DEBUG "Enables Debugging messages and other logging features" OFF)
 if(GCRYPT_NOSTORE)
     target_compile_definitions(gcrypt PUBLIC GCRYPT_NOSTORE)
+endif()
+
+if (GCRYPT_DEBUG)
+    target_compile_definitions(gcrypt PUBLIC GCRYPT_DEBUG)
 endif()
 
 target_include_directories(gcrypt PUBLIC
@@ -113,9 +124,14 @@ endif()
 target_link_libraries(gcrypt PUBLIC
     libsodium
     mlkem_native
-    stdc++exp
     ${PLATFORM_LIBS}
 )
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_libraries(gcrypt PUBLIC stdc++exp)
+endif()
+if (WIN32)
+    target_link_libraries(gcrypt PUBLIC bcrypt)
+endif()
 
 add_executable(testbin tests/keys.cpp)
 target_link_libraries(testbin PRIVATE gcrypt stdc++exp)
