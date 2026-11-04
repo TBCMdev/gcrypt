@@ -135,3 +135,7 @@ endif()
 
 add_executable(testbin tests/keys.cpp)
 target_link_libraries(testbin PRIVATE gcrypt stdc++exp)
+
+if(EMSCRIPTEN)
+    add_subdirectory(web)
+endif()
