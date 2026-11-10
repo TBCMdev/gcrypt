@@ -110,11 +110,9 @@ namespace gcrypt::XedDSA
         
         xckey u_to_y(const xckey& U)
         {
-            using namespace gcrypt::kmath::xc32::impl;
+            using namespace gcrypt::kmath::xc32;
 
-            sliced numer, denom, dinv, u, c = {1};
-
-            unpack(u, U);
+            field_element numer, denom, dinv, u, c = {1};
 
             sub(numer, u, c);
             add(denom, u, c);

@@ -1,3 +1,5 @@
 .vscode/*
 dependencies/**
 build/*
+libsignalc
+tests/libsignal

@@ -9,6 +9,7 @@
 #include <expected>
 #include <sodium.h>
 #include <tuple>
+#include <bit>
 
 
 namespace gcrypt::util
@@ -23,6 +24,33 @@ namespace gcrypt::util
 
         template<std::size_t... _Sizes>
         using sum_size_t = std::integral_constant<std::size_t, (... + _Sizes)>;
+
+        template<std::size_t _Bytes>
+        struct integral_from_bytes
+        {
+            using type = std::conditional_t<
+                                    _Bytes <= 8ULL,
+                                    int8_t,
+                         std::conditional_t<
+                                    _Bytes <= 16ULL,
+                                    int16_t,
+                         std::conditional_t<
+                                    _Bytes <= 32ULL,
+                                    int32_t,
+                         std::conditional_t<
+                                    _Bytes <= 64ULL,
+                                    int64_t,
+                                    void
+                        >>>>;
+                                    
+        };
+        // returns the nearest machine int type that can store _Min bytes.
+        template<std::size_t _Min>
+        struct integral_which_stores
+        {
+            static constexpr std::size_t power = 1 << (sizeof(std::size_t) * 8 - std::countl_zero(_Min));
+            using type = typename integral_from_bytes<power>::type;
+        };
     }
     
 
