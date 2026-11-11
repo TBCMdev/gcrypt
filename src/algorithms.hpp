@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <tuple>
 
+#include <cassert>
+
 namespace gcrypt
 {
     namespace Ed25519
@@ -73,6 +75,7 @@ namespace gcrypt
                 crypto_core_ed25519_scalar_mul(ha.data(), h.data(), A.Private.data());
                 crypto_core_ed25519_scalar_add(s.data(), R.Private.data(), ha.data());
             }
+
             return util::kconcat(R.Public, s);
         }
 
@@ -82,18 +85,18 @@ namespace gcrypt
         template<std::size_t _MessageSize>
         bool verify32(const xckey& mkPub, const key<_MessageSize>& M, key<64> rcs)
         {
-            init_trace();
+            constexpr std::size_t XB = typebytes(xckey);
             // lower half of r concat s
-            xckey R = util::kcpy<GCRYPT_X25519_KEY_SIZE, 64>(rcs);
+            xckey R = util::kcpy<XB, 64>(rcs);
             // upper half of r concat s
-            xckey s = util::kcpy<GCRYPT_X25519_KEY_SIZE, 64>(rcs, GCRYPT_X25519_KEY_SIZE);
+            xckey s = util::kcpy<XB, 64>(rcs, XB);
 
             if (!impl::sig_in_bounds(mkPub, R, s))
-                return gtrace(false);
+                return false;
 
             xckey A = impl::convert_mont(mkPub);
             if (crypto_core_ed25519_is_valid_point(A.data()) == 0)
-                return gtrace(false);
+                return false;
 
             xckey h{}, hA{};
             hashing::dhash hash = hashing::SHA(util::kconcat(R, A, M));
@@ -104,11 +107,11 @@ namespace gcrypt
             impl::bpscale(&s); // s = sB
 
             if (crypto_scalarmult_ed25519_noclamp(hA.data(), h.data(), A.data()) != 0) // h = hA
-                return gtrace(false);
+                return false;
 
             xckey r_check{};
             if (crypto_core_ed25519_sub(r_check.data(), s.data(), hA.data()) != 0)
-                return gtrace(false);
+                return false;
 
             // ensure bytes equal (R == R_check)
             return util::kmatch(r_check, R);

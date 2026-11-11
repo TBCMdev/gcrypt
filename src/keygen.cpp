@@ -7,6 +7,12 @@
 
 namespace gcrypt::keygen
 {
+    static inline void clamp25519(uint8_t* k)
+    {
+        k[0]  &= 248;
+        k[31] &= 127;
+        k[31] |= 64;
+    }
     std::expected
                 <
                 xckeypair,
@@ -15,7 +21,7 @@ namespace gcrypt::keygen
     {
         xckeypair out{};
         crypto_box_keypair(out.Public.data(), out.Private.data());
-
+        clamp25519(out.Private.data());
         return out;
     }
     std::expected
@@ -27,6 +33,7 @@ namespace gcrypt::keygen
         xcikeypair out{};
         crypto_box_keypair(out.Public.data.data(), out.Private.data());
         out.Public.identifier = util::keyid(out.Public.data);
+        clamp25519(out.Private.data());
         return out;
     }
     std::expected
@@ -37,6 +44,7 @@ namespace gcrypt::keygen
     {
         edkeypair out{};
         crypto_box_keypair(out.Public.data(), out.Private.data());
+        clamp25519(out.Private.data());
 
         return out;
     }
@@ -49,6 +57,7 @@ namespace gcrypt::keygen
         edikeypair out{};
         crypto_box_keypair(out.Public.data.data(), out.Private.data());
         out.Public.identifier = util::keyid(out.Public.data);
+        clamp25519(out.Private.data());
 
         return out;
     }

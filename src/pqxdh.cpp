@@ -130,7 +130,7 @@ namespace gcrypt::pqxdh
             if (!XedDSA::verify32(userIdentityKey, signedQKey->data, signedQKey->signature))
                 return gtrace(false);
         }
-        return gtrace(true);
+        return gtrace(true); // Todo: Reject if no quantum.
     }
     std::optional<session_init_result> create_outbound_session(
                                             const std::string& recipientId,

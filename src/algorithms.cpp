@@ -63,7 +63,7 @@ namespace gcrypt::XedDSA
         }
         void bpscale(xckey* scalar)
         {
-            auto d = scalar->data();
+            uint8_t* d = scalar->data();
             crypto_scalarmult_ed25519_base_noclamp(d, d);
         }
         xckeypair calculate_key_pair(const xckey& K)
@@ -83,7 +83,7 @@ namespace gcrypt::XedDSA
         }
         bool sig_in_bounds(const xckey& U, const xckey& R, const xckey& s)
         {
-            constexpr uint8_t P[GCRYPT_X25519_KEY_SIZE] = 
+            constexpr uint8_t P[typebytes(xckey)] = 
             {
                 0xED, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
                 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -91,7 +91,7 @@ namespace gcrypt::XedDSA
                 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F
             };
             // Returns false if U.y >= p
-            if (sodium_compare(U.data(), P, GCRYPT_X25519_KEY_SIZE) != -1)
+            if (sodium_compare(U.data(), P, typebytes(xckey)) != -1)
                 return false;
             std::cout << R.str() << '\n';
 
@@ -99,7 +99,7 @@ namespace gcrypt::XedDSA
             xckey Ry = R;
             Ry[GCRYPT_ALG_ED25519_SIGNBYTE] &= 0x7F;
 
-            if (sodium_compare(Ry.data(), P, GCRYPT_X25519_KEY_SIZE) != -1)
+            if (sodium_compare(Ry.data(), P, typebytes(xckey)) != -1)
                 return false;
                 
             if ((s[GCRYPT_ALG_ED25519_SIGNBYTE] & 0xE0) != 0)
@@ -107,18 +107,23 @@ namespace gcrypt::XedDSA
 
             return true;
         }
-        
+        /// @brief Converts an elliptic ed25519 curve to a montgomery key.
+        ///        Currently uses a x32 architecture solution with non optimal algorithms.
+        ///        TODO: Optimize.
         xckey u_to_y(const xckey& U)
         {
-            using namespace gcrypt::kmath::xc32;
+            // can be used by 32bit/64bit architecture.
+            using namespace gcrypt::kmath::xc32_universal;
 
             field_element numer, denom, dinv, u, c = {1};
+
+            unpack(u, U);
 
             sub(numer, u, c);
             add(denom, u, c);
 
-            if (iszero(denom))
-                throw std::invalid_argument("u_to_y failed. Denominator of division = 0.");
+            // if (iszero(denom))
+                // throw std::invalid_argument("u_to_y failed. Denominator of division = 0.");
 
             inv(dinv, denom);
             mul(denom, numer, dinv);
