@@ -243,7 +243,7 @@ GCRYPT_FUNC_USES_STORAGE
     std::optional<session::messaging_session> create_inbound_session(
                                     const std::string&                   recipientId,
                                     const xckeypair&                     localIdentityKey,
-                                    const xckey&                         usedPrivateSignedPreKey,
+                                    const xckeypair&                     usedSignedPreKey,
                                     const std::optional<xckey>&          usedPrivateOneTimePreKey,
                                     const key<MLKEM_SKB>&                usedPrivateQuantumPreKey,
                                     const initial_message_handshake&     handshake

@@ -188,7 +188,7 @@ namespace gcrypt::pqxdh
     std::optional<session::messaging_session> create_inbound_session(
                         const std::string&                   recipientId,
                         const xckeypair&                     localIdentityKey,
-                        const xckey&                         usedPrivateSignedPreKey,
+                        const xckeypair&                     usedSignedPreKey,
                         const std::optional<xckey>&          usedPrivateOneTimePreKey,
                         const key<MLKEM_SKB>&                usedPrivateQuantumPreKey,
                         const initial_message_handshake&     handshake
@@ -196,9 +196,9 @@ namespace gcrypt::pqxdh
     {
         const xckey PQSS = MLKEM_32::decapsulate(handshake.cipherText, usedPrivateQuantumPreKey);
 
-        const xckey DH_1 = X25519::ssecret(usedPrivateSignedPreKey, handshake.identityKey);
+        const xckey DH_1 = X25519::ssecret(usedSignedPreKey.Private, handshake.identityKey);
         const xckey DH_2 = X25519::ssecret(localIdentityKey.Private, handshake.ephermoralKey);
-        const xckey DH_3 = X25519::ssecret(usedPrivateSignedPreKey, handshake.ephermoralKey);
+        const xckey DH_3 = X25519::ssecret(usedSignedPreKey.Private, handshake.ephermoralKey);
 
         key<32> extract;
         try{
@@ -246,11 +246,12 @@ namespace gcrypt::pqxdh
             )
             return std::nullopt;
         
-        xckey                         usedPrivateSignedPreKey;
+        xckeypair                     usedSignedPreKey;
         if (
             auto spk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedPreKeys[0], store::key_type::PREKEY);
             !spk.has_value()                                                ||
-            !util::load_keyb_s(*spk, usedPrivateSignedPreKey, typebytes(xckey))
+            !util::load_keyb_s(*spk, usedSignedPreKey.Public) ||
+            !util::load_keyb_s(*spk, usedSignedPreKey.Private, typebytes(xckey))
             )
             return std::nullopt;
 
@@ -276,7 +277,7 @@ namespace gcrypt::pqxdh
 
         return create_inbound_session(recipientId,
                                       localIdentityKey,
-                                      usedPrivateSignedPreKey,
+                                      usedSignedPreKey,
                                       has_usedPrivateOneTimePreKey ? (std::optional<xckey>)usedPrivateOneTimePreKey : std::nullopt,
                                       usedPrivateQuantumPreKey,
                                       handshake);

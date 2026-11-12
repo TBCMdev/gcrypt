@@ -27,6 +27,7 @@ namespace gcrypt::session
         }
     {
         // master secret already derived and received.
+        
     }
     util::convert_result<skipped_message_key> skipped_message_key::from_bytes(const fixed_bytespan& from)
     {
