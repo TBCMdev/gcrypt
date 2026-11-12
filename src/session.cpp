@@ -235,7 +235,7 @@ namespace gcrypt::session
             head.insert(head.end(), ct.begin(), ct.end());
             
             if (!commit_state())
-                return ratchet_failed(RatchetFailureType::STORAGE_FAILED, "Could not save updated ratchet state to storage implementation.")l
+                return ratchet_failed(RatchetFailureType::STORAGE_FAILED, "Could not save updated ratchet state to storage implementation.");
             return head;
         }catch(std::exception& e)
         {
@@ -314,7 +314,7 @@ namespace gcrypt::session
             }
 
             if (!commit_state())
-                return ratchet_failed(RatchetFailureType::STORAGE_FAILED, "Could not save updated ratchet state to storage implementation.")l
+                return ratchet_failed(RatchetFailureType::STORAGE_FAILED, "Could not save updated ratchet state to storage implementation.");
             
             return *d;
         }catch(std::exception& e)
