@@ -107,9 +107,9 @@ namespace gcrypt::session
             xckeypair localRatchetKey;           // Our current active DH key pair (DHs)
             xckey remoteRatchetKey;              // Remote current active DH public key (DHr)
 
-            uint32_t sendSequence{0};            // Ns: Messages sent in current sending chain
-            uint32_t receiveSequence{0};         // Nr: Messages received in current receiving chain
-            uint32_t previousChainLength{0};     // PN: Message count of previous sending chain
+            uint32_t sendSequence = 0;            // Ns: Messages sent in current sending chain
+            uint32_t receiveSequence = 0;         // Nr: Messages received in current receiving chain
+            uint32_t previousChainLength = 0;     // PN: Message count of previous sending chain
 
             std::vector<skipped_message_key> stagedSkippedKeys; // added to skipped keys upon success
 
