@@ -96,7 +96,7 @@ namespace gcrypt::session
         std::memcpy(&sc,  span.data() + offset, varbytes(sc));
         offset += varbytes(sc);
         
-        if (sc == 0 || sc > GCRYPT_SESSION_MAX_KEY_SKIP)
+        if (sc > GCRYPT_SESSION_MAX_KEY_SKIP)
             return convert_error<bytespan, messaging_session>("Invalid skipped key count found in deserialization: " + sc);
         size_t left = span.size() - offset;
         // we want a strict size match.
