@@ -107,16 +107,18 @@ namespace gcrypt::session
             xckeypair localRatchetKey;           // Our current active DH key pair (DHs)
             xckey remoteRatchetKey;              // Remote current active DH public key (DHr)
 
-            std::vector<skipped_message_key> stagedSkippedKeys;
+            uint32_t sendSequence{0};            // Ns: Messages sent in current sending chain
+            uint32_t receiveSequence{0};         // Nr: Messages received in current receiving chain
+            uint32_t previousChainLength{0};     // PN: Message count of previous sending chain
+
+            std::vector<skipped_message_key> stagedSkippedKeys; // added to skipped keys upon success
+
         } ratchet_state;
 
         ratchet_state rstate;
 
         const std::string identifier;
 
-        uint32_t sendSequence{0};            // Ns: Messages sent in current sending chain
-        uint32_t receiveSequence{0};         // Nr: Messages received in current receiving chain
-        uint32_t previousChainLength{0};     // PN: Message count of previous sending chain
 
         std::vector<skipped_message_key> skippedKeys; // Cache for out-of-order arrivals
 
@@ -129,7 +131,8 @@ namespace gcrypt::session
         { rstate = _rstate; }
         /// @brief Commits the ratchet state to the main state of the object.
         ///        Only call this if the most recent ratcheting step was a success, and you want to commit the results.
-        void commit_state();
+        /// @returns whether or not the storage implementation has successfully been updated with the new ratchet state.
+        bool commit_state();
 
         /// @brief Constructs a payload in byte form that can be sent to the recipient
         ///        of this messaging session.
@@ -161,7 +164,7 @@ namespace gcrypt::session
             return messaging_session(recipientId);
         }
     protected:
-        messaging_session(const std::string& recipientId)
+        messaging_session(const std::string& recipientId) : identifier(recipientId)
         {}
 #ifndef GCRYPT_EXPOSE
     protected:

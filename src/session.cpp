@@ -121,9 +121,9 @@ namespace gcrypt::session
         session.rstate.receivingChainKey = rck,
         session.rstate.localRatchetKey = lrk,
         session.rstate.remoteRatchetKey = rrk,
-        session.sendSequence = ss,
-        session.receiveSequence = rs,
-        session.previousChainLength = pcl,
+        session.rstate.sendSequence = ss,
+        session.rstate.receiveSequence = rs,
+        session.rstate.previousChainLength = pcl,
         session.skippedKeys = std::move(smks);
 
         return session;
@@ -145,10 +145,10 @@ namespace gcrypt::session
                                 rstate.localRatchetKey.Public,
                                 rstate.localRatchetKey.Private,
                                 rstate.remoteRatchetKey);
-        std::ranges::copy(util::bytes(sendSequence),        data.begin() + off);
-        std::ranges::copy(util::bytes(receiveSequence),     data.begin() + (off += varbytes(sendSequence)));
-        std::ranges::copy(util::bytes(previousChainLength), data.begin() + (off += varbytes(receiveSequence)));
-        std::ranges::copy(util::bytes(static_cast<uint32_t>(skippedKeys.size())), data.begin() + (off += varbytes(previousChainLength)));
+        std::ranges::copy(util::bytes(rstate.sendSequence),        data.begin() + off);
+        std::ranges::copy(util::bytes(rstate.receiveSequence),     data.begin() + (off += varbytes(rstate.sendSequence)));
+        std::ranges::copy(util::bytes(rstate.previousChainLength), data.begin() + (off += varbytes(rstate.receiveSequence)));
+        std::ranges::copy(util::bytes(static_cast<uint32_t>(skippedKeys.size())), data.begin() + (off += varbytes(rstate.previousChainLength)));
         
         constexpr auto converter = [](const skipped_message_key& it)
         { return it.to_bytes(); };
@@ -165,11 +165,11 @@ namespace gcrypt::session
 
         util::kcpy(rstate.localRatchetKey.Public, bytespan(data));
         std::memcpy(data.data() + typebytes(xckey),
-                    static_cast<void*>(&sendSequence),
-                    varbytes(sendSequence));
-        std::memcpy(data.data() + typebytes(xckey) + varbytes(sendSequence),
-                    static_cast<void*>(&previousChainLength),
-                    varbytes(previousChainLength));
+                    static_cast<void*>(&rstate.sendSequence),
+                    varbytes(rstate.sendSequence));
+        std::memcpy(data.data() + typebytes(xckey) + varbytes(rstate.sendSequence),
+                    static_cast<void*>(&rstate.previousChainLength),
+                    varbytes(rstate.previousChainLength));
         
         return data;
     }
@@ -192,16 +192,16 @@ namespace gcrypt::session
         key<32> mk;
         std::tie(rstate.sendingChainKey, mk) = util::kcut<LHS, RHS>(HKDF::KDF<(LHS + RHS)>(rstate.sendingChainKey));
 
-        return std::make_tuple(mk, sendSequence++);
+        return std::make_tuple(mk, rstate.sendSequence++);
     }
-    void messaging_session::commit_state()
+    bool messaging_session::commit_state()
     {
         skippedKeys.append_range(rstate.stagedSkippedKeys);
         rstate.stagedSkippedKeys.clear();
         
         bytedata bytes = to_bytes();
 
-        GCRYPT_ISTORE->store_session(identifier, bytes);
+        return GCRYPT_ISTORE->store_session(identifier, bytes);
     }
     ratchet_result messaging_session::ratchet_encrypt(const bytespan& msg)
     {
@@ -234,7 +234,8 @@ namespace gcrypt::session
 
             head.insert(head.end(), ct.begin(), ct.end());
             
-            commit_state();
+            if (!commit_state())
+                return ratchet_failed(RatchetFailureType::STORAGE_FAILED, "Could not save updated ratchet state to storage implementation.")l
             return head;
         }catch(std::exception& e)
         {
@@ -265,7 +266,7 @@ namespace gcrypt::session
 
         key<32> mk;
         std::tie(rstate.receivingChainKey, mk) = util::kcut<LHS, RHS>(HKDF::KDF<(LHS + RHS)>(rstate.receivingChainKey));
-        receiveSequence++;
+        rstate.receiveSequence++;
         return mk;
     }
 
@@ -312,7 +313,9 @@ namespace gcrypt::session
                 return ratchet_failed(RatchetFailureType::BAD_DECRYPT, "AEAD Protocol failed decrypt.");
             }
 
-            commit_state();
+            if (!commit_state())
+                return ratchet_failed(RatchetFailureType::STORAGE_FAILED, "Could not save updated ratchet state to storage implementation.")l
+            
             return *d;
         }catch(std::exception& e)
         {
@@ -340,10 +343,10 @@ namespace gcrypt::session
     std::optional<RatchetStepError> messaging_session::skip_msg_keys(int until)
     {
         // TODO
-        if (receiveSequence + GCRYPT_SESSION_MAX_KEY_SKIP < until)
+        if (rstate.receiveSequence + GCRYPT_SESSION_MAX_KEY_SKIP < until)
             return RatchetStepError(RatchetFailureType::MAX_SKIP_REACHED, "Max skip reached.");
         if (rstate.receivingChainKey.data() != nullptr)
-            while (receiveSequence < until)
+            while (rstate.receiveSequence < until)
             {
                 constexpr size_t LHS = varbytes(rstate.receivingChainKey), RHS = varbytes(skipped_message_key::messageKey);
                 const auto kdfout = HKDF::KDF<(LHS + RHS)>(rstate.receivingChainKey);
@@ -351,13 +354,13 @@ namespace gcrypt::session
                 skipped_message_key skipped
                 {
                     .ratchetPublicKey = rstate.remoteRatchetKey,
-                    .sequenceNumber = receiveSequence
+                    .sequenceNumber = rstate.receiveSequence
                 };
 
                 std::tie(rstate.receivingChainKey, skipped.messageKey) = util::kcut<LHS, RHS>(kdfout);
 
                 skippedKeys.push_back(std::move(skipped));
-                receiveSequence++;
+                rstate.receiveSequence++;
             }
         return std::nullopt;
     }
@@ -380,9 +383,9 @@ namespace gcrypt::session
     }
     ratchet_step_status messaging_session::dh_ratchet(const message_header& header)
     {
-        previousChainLength = sendSequence;
-        sendSequence = 0;
-        receiveSequence = 0;
+        rstate.previousChainLength = rstate.sendSequence;
+        rstate.sendSequence = 0;
+        rstate.receiveSequence = 0;
 
         rstate.remoteRatchetKey = header.ratchet;
 

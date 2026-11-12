@@ -74,7 +74,7 @@ namespace gcrypt::pqxdh
 
     struct session_init_result
     {
-        session::messaging_session session;
+        session::msessionref session;
         initial_message_handshake handshakeMessage;
     };
 
@@ -116,9 +116,15 @@ namespace gcrypt::pqxdh
                 .usedQuantumPreKeys = std::move(usedQuantumPreKeys)
             };
 
+            auto outbound_session = std::make_shared<session::messaging_session>(recipientId, keys.identityKey, keys.signedPreKey, KDFSecretKey);
+    #ifndef GCRYPT_NOSTORE
+            if (!GCRYPT_ISTORE->store_session(recipientId, outbound_session->to_bytes()))
+                return std::nullopt;
+            GCRYPT_ISTORE->store_cached_session(recipientId, outbound_session);
+    #endif
             return session_init_result
             {
-                .session = session::messaging_session(recipientId, keys.identityKey, keys.signedPreKey, KDFSecretKey),
+                .session = outbound_session,
                 .handshakeMessage = std::move(handshake)
             };
         }

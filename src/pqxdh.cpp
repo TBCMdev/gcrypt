@@ -117,20 +117,19 @@ namespace gcrypt::pqxdh
     }
     bool verify_foreign_bundle(const xckey& userIdentityKey, const foreign_prekey_bundle& bundle)
     {
-        init_trace();
         if (!util::kmatch(userIdentityKey, bundle.identityKey))
-            return gtrace(false);
+            return false;
 
         if (!XedDSA::verify32(userIdentityKey, bundle.signedPreKey.data, bundle.signedPreKey.signature))
-            return gtrace(false);
+            return false;
 
         // only check signature if it is qsidkey
         if (const auto* signedQKey = std::get_if<qsidkey>(&bundle.qpubsidkey))
         {
             if (!XedDSA::verify32(userIdentityKey, signedQKey->data, signedQKey->signature))
-                return gtrace(false);
+                return false;
         }
-        return gtrace(true); // Todo: Reject if no quantum.
+        return true; // Todo: Reject if no quantum.
     }
     std::optional<session_init_result> create_outbound_session(
                                             const std::string& recipientId,
@@ -139,14 +138,13 @@ namespace gcrypt::pqxdh
                                             const foreign_prekey_bundle& keys
                                                               )
     {
-        init_trace();
         if (!verify_foreign_bundle(identityToVerifyAgainst, keys))
-            return gtrace(std::nullopt);
+            return std::nullopt;
 
         const auto _EK = keygen::X25519::make_pair();
 
         if (!_EK.has_value())
-            return gtrace(std::nullopt);
+            return std::nullopt;
 
         const auto EK = _EK.value();
 
@@ -175,16 +173,16 @@ namespace gcrypt::pqxdh
                 SK = HKDF::KDF<32>(input);
             }
         }catch(const std::runtime_error& HKDF_extract_error)
-        { return gtrace(std::nullopt); }
+        { return std::nullopt; }
 
         // continue execution
         // @note: Could be a risk to call this function ? could be called and returned a valid session regardless of bundle verification.
-        return gtrace( _internal::finalize_outbound_session(
+        return _internal::finalize_outbound_session(
                                                 recipientId,
                                                 localIdentityKey.Public,
                                                 EK.Public,
                                                 PQPK.cipherText,
-                                                SK, keys));
+                                                SK, keys);
     }
 
     std::optional<session::messaging_session> create_inbound_session(
@@ -196,7 +194,6 @@ namespace gcrypt::pqxdh
                         const initial_message_handshake&     handshake
                         )
     {
-        init_trace();
         const xckey PQSS = MLKEM_32::decapsulate(handshake.cipherText, usedPrivateQuantumPreKey);
 
         const xckey DH_1 = X25519::ssecret(usedPrivateSignedPreKey, handshake.identityKey);
@@ -217,65 +214,74 @@ namespace gcrypt::pqxdh
                 extract = HKDF::KDF<32>(input);
             }
         }catch(const std::runtime_error& HKDF_extract_error)
-        { return gtrace(std::nullopt); }
+        { return std::nullopt; }
 
         // Initialize Double Ratchet session and return
-        return gtrace(session::messaging_session(recipientId, handshake.identityKey, handshake.ephermoralKey, extract));
+        auto session = session::messaging_session(recipientId, handshake.identityKey, handshake.ephermoralKey, extract);
+        
+    #ifndef GCRYPT_NOSTORE
+        auto v = session.to_bytes();
+        if (!GCRYPT_ISTORE->store_session(recipientId, v))
+            return std::nullopt;
+        // Todo: Remove copy ?
+        GCRYPT_ISTORE->store_cached_session(recipientId, std::make_shared<session::messaging_session>(session));
+    #endif
+
+        return std::move(session);
     }
     std::optional<session::messaging_session> create_inbound_session(const std::string& recipientId, const initial_message_handshake& handshake)
     {
         GCRYPT_ASSERT_STORE();
-        init_trace();
     #ifndef GCRYPT_NOSTORE
 
         if (handshake.usedPreKeys.size() < 1)
-            return gtrace(std::nullopt);
+            return std::nullopt;
 
         xckeypair                     localIdentityKey;
         if (
             auto pik = GCRYPT_ISTORE->load_identity_key_pair();
-            !pik.has_value()                                                ||
+            !pik.has_value()                                                  ||
             util::load_keyb_s(*pik, localIdentityKey.Public)                  ||
             util::load_keyb_s(*pik, localIdentityKey.Private, typebytes(xckey))
             )
-            return gtrace(std::nullopt);
+            return std::nullopt;
         
         xckey                         usedPrivateSignedPreKey;
         if (
             auto spk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedPreKeys[0], store::key_type::PREKEY);
             !spk.has_value()                                                ||
-            util::load_keyb_s(*spk, usedPrivateSignedPreKey, typebytes(xckey))
+            util::load_keyb_s(*spk, usedPrivateSignedPreKey)
             )
-            return gtrace(std::nullopt);
+            return std::nullopt;
 
         bool has_usedPrivateOneTimePreKey = handshake.usedPreKeys.size() > 1;
-        xckey                         usedPrivateOneTimePreKey;
+        xckey usedPrivateOneTimePreKey;
 
         if (has_usedPrivateOneTimePreKey)
         {
             if (
                 auto opk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedPreKeys[1], store::key_type::PREKEY);
                 !opk.has_value()                                                ||
-                util::load_keyb_s(*opk, usedPrivateOneTimePreKey, typebytes(xckey))
+                util::load_keyb_s(*opk, usedPrivateOneTimePreKey)
                 )
-                return gtrace(std::nullopt);
+                return std::nullopt;
         }
-        key<MLKEM_SKB>                usedPrivateQuantumPreKey;
+        key<MLKEM_SKB> usedPrivateQuantumPreKey;
         if (
-                auto qpk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedPreKeys[1], store::key_type::QUANTUM);
+                auto qpk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedQuantumPreKeys[0], store::key_type::QUANTUM);
                 !qpk.has_value()                                                ||
-                util::load_keyb_s(*qpk, usedPrivateQuantumPreKey, MLKEM_SKB)
+                util::load_keyb_s(*qpk, usedPrivateQuantumPreKey)
                 )
-                return gtrace(std::nullopt);
+                return std::nullopt;
 
-        return gtrace(create_inbound_session(recipientId,
+        return create_inbound_session(recipientId,
                                       localIdentityKey,
                                       usedPrivateSignedPreKey,
                                       has_usedPrivateOneTimePreKey ? (std::optional<xckey>)usedPrivateOneTimePreKey : std::nullopt,
                                       usedPrivateQuantumPreKey,
-                                      handshake));
+                                      handshake);
     #else
-        return gtrace(std::nullopt);
+        return std::nullopt;
     #endif
     }
 }

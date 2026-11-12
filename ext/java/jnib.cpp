@@ -73,44 +73,40 @@ namespace gcrypt::jniOM::from
             JNI_PCONTEXT, 
             const session::messaging_session& session)
     {
-        return nullptr;
+        jclass clazz = env->FindClass(JNI_messaging_session_CLASSNAME_MAPPING);
+        if (!clazz) return nullptr;
 
-        // TODO
+        jmethodID constructor = env->GetMethodID(clazz, JNI_CONSTRUCTOR_NAME, JNI_EMPTY_CONSTRUCTOR_SIG);
+        if (!constructor) {
+            env->DeleteLocalRef(clazz);
+            return nullptr;
+        }
 
-        // jclass clazz = env->FindClass(JNI_messaging_session_CLASSNAME_MAPPING);
-        // if (!clazz) return nullptr;
+        jobject jSession = env->NewObject(clazz, constructor);
+        if (!jSession) {
+            env->DeleteLocalRef(clazz);
+            return nullptr;
+        }
 
-        // jmethodID constructor = env->GetMethodID(clazz, JNI_CONSTRUCTOR_NAME, JNI_EMPTY_CONSTRUCTOR_SIG);
-        // if (!constructor) {
-        //     env->DeleteLocalRef(clazz);
-        //     return nullptr;
-        // }
+        jfieldID fid_remoteIdentityKey = env->GetFieldID(clazz, "remoteIdentityKey", "[B");
+        jfieldID fid_rootKey           = env->GetFieldID(clazz, "rootKey", "[B");
+        jfieldID fid_sequenceNumber    = env->GetFieldID(clazz, "sequenceNumber", "I");
 
-        // jobject jSession = env->NewObject(clazz, constructor);
-        // if (!jSession) {
-        //     env->DeleteLocalRef(clazz);
-        //     return nullptr;
-        // }
+        // Populate Remote Identity Key
+        jbyteArray remoteIdArr = from::key(JNI_CONTEXT, session.remoteIdentityKey);
+        env->SetObjectField(jSession, fid_remoteIdentityKey, remoteIdArr);
+        if (remoteIdArr) env->DeleteLocalRef(remoteIdArr);
 
-        // jfieldID fid_remoteIdentityKey = env->GetFieldID(clazz, "remoteIdentityKey", "[B");
-        // jfieldID fid_rootKey           = env->GetFieldID(clazz, "rootKey", "[B");
-        // jfieldID fid_sequenceNumber    = env->GetFieldID(clazz, "sequenceNumber", "I");
+        // Populate Root Key
+        jbyteArray rootKeyArr = from::key(JNI_CONTEXT, session.rootKey);
+        env->SetObjectField(jSession, fid_rootKey, rootKeyArr);
+        if (rootKeyArr) env->DeleteLocalRef(rootKeyArr);
 
-        // // Populate Remote Identity Key
-        // jbyteArray remoteIdArr = from::key(JNI_CONTEXT, session.remoteIdentityKey);
-        // env->SetObjectField(jSession, fid_remoteIdentityKey, remoteIdArr);
-        // if (remoteIdArr) env->DeleteLocalRef(remoteIdArr);
+        // Populate Sequence Number / Counter
+        env->SetIntField(jSession, fid_sequenceNumber, static_cast<jint>(session.sequenceNumber));
 
-        // // Populate Root Key
-        // jbyteArray rootKeyArr = from::key(JNI_CONTEXT, session.rootKey);
-        // env->SetObjectField(jSession, fid_rootKey, rootKeyArr);
-        // if (rootKeyArr) env->DeleteLocalRef(rootKeyArr);
-
-        // // Populate Sequence Number / Counter
-        // env->SetIntField(jSession, fid_sequenceNumber, static_cast<jint>(session.sequenceNumber));
-
-        // env->DeleteLocalRef(clazz);
-        // return jSession;
+        env->DeleteLocalRef(clazz);
+        return jSession;
     }
     jobject session_init_result(
         JNI_PCONTEXT, 
@@ -309,7 +305,7 @@ namespace gcrypt::jniOM::to
 #pragma endregion 
 
 // below are implementation wrappers for the pqxdh handshake protocol and X3DH E2EE protocol.
-
+// TODO: Add support for session switching and storage switching for account changes
 GCRYPT_JNI_FUNC_SIG(jint, int) JNI_OnLoad(JavaVM* vm, void* reserved) {
     if (sodium_init() < 0) {
         return JNI_ERR; // Libsodium failed to initialize CSPRNG
@@ -325,7 +321,6 @@ GCRYPT_LIB_JNI_FUNC(makeLocalKeyBundle)(JNI_ENTRY_PCONTEXT, jint deviceId)
     local_key_bundle kbundle = make_lkb(udId);
 
     gcrypt::jni::_GlobalSession = std::make_unique<gcrypt::jni::jni_session>(kbundle);
-
     return gcrypt::jniOM::from::local_key_bundle(JNI_CONTEXT, kbundle);
 }
 

@@ -13,6 +13,7 @@ namespace gcrypt::keygen
         k[31] &= 127;
         k[31] |= 64;
     }
+    // Todo: Deprecate, identical to ed25519 impl.
     std::expected
                 <
                 xckeypair,
