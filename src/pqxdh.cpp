@@ -217,7 +217,7 @@ namespace gcrypt::pqxdh
         { return std::nullopt; }
 
         // Initialize Double Ratchet session and return
-        auto session = session::messaging_session(recipientId, handshake.identityKey, handshake.ephermoralKey, extract);
+        auto session = session::messaging_session(recipientId, handshake.identityKey, usedSignedPreKey, extract);
         
     #ifndef GCRYPT_NOSTORE
         auto v = session.to_bytes();
