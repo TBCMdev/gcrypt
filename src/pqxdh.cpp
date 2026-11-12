@@ -234,15 +234,15 @@ namespace gcrypt::pqxdh
         GCRYPT_ASSERT_STORE();
     #ifndef GCRYPT_NOSTORE
 
-        if (handshake.usedPreKeys.size() < 1)
+        if (handshake.usedPreKeys.size() < 1 || handshake.usedQuantumPreKeys.size() == 0)
             return std::nullopt;
 
         xckeypair                     localIdentityKey;
         if (
             auto pik = GCRYPT_ISTORE->load_identity_key_pair();
             !pik.has_value()                                                  ||
-            util::load_keyb_s(*pik, localIdentityKey.Public)                  ||
-            util::load_keyb_s(*pik, localIdentityKey.Private, typebytes(xckey))
+            !util::load_keyb_s(*pik, localIdentityKey.Public)                  ||
+            !util::load_keyb_s(*pik, localIdentityKey.Private, typebytes(xckey))
             )
             return std::nullopt;
         
@@ -250,7 +250,7 @@ namespace gcrypt::pqxdh
         if (
             auto spk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedPreKeys[0], store::key_type::PREKEY);
             !spk.has_value()                                                ||
-            util::load_keyb_s(*spk, usedPrivateSignedPreKey)
+            !util::load_keyb_s(*spk, usedPrivateSignedPreKey, typebytes(xckey))
             )
             return std::nullopt;
 
@@ -262,7 +262,7 @@ namespace gcrypt::pqxdh
             if (
                 auto opk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedPreKeys[1], store::key_type::PREKEY);
                 !opk.has_value()                                                ||
-                util::load_keyb_s(*opk, usedPrivateOneTimePreKey)
+                !util::load_keyb_s(*opk, usedPrivateOneTimePreKey, typebytes(xckey))
                 )
                 return std::nullopt;
         }
@@ -270,7 +270,7 @@ namespace gcrypt::pqxdh
         if (
                 auto qpk = GCRYPT_ISTORE->load_one_time_prekey(handshake.usedQuantumPreKeys[0], store::key_type::QUANTUM);
                 !qpk.has_value()                                                ||
-                util::load_keyb_s(*qpk, usedPrivateQuantumPreKey)
+                !util::load_keyb_s(*qpk, usedPrivateQuantumPreKey, MLKEM_PKB)
                 )
                 return std::nullopt;
 
