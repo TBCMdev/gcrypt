@@ -93,17 +93,17 @@ namespace gcrypt::jniOM::from
         jfieldID fid_sequenceNumber    = env->GetFieldID(clazz, "sequenceNumber", "I");
 
         // Populate Remote Identity Key
-        jbyteArray remoteIdArr = from::key(JNI_CONTEXT, session.remoteIdentityKey);
+        jbyteArray remoteIdArr = from::key(JNI_CONTEXT, session.rstate.remoteIdentityKey);
         env->SetObjectField(jSession, fid_remoteIdentityKey, remoteIdArr);
         if (remoteIdArr) env->DeleteLocalRef(remoteIdArr);
 
         // Populate Root Key
-        jbyteArray rootKeyArr = from::key(JNI_CONTEXT, session.rootKey);
+        jbyteArray rootKeyArr = from::key(JNI_CONTEXT, session.rstate.rootKey);
         env->SetObjectField(jSession, fid_rootKey, rootKeyArr);
         if (rootKeyArr) env->DeleteLocalRef(rootKeyArr);
 
         // Populate Sequence Number / Counter
-        env->SetIntField(jSession, fid_sequenceNumber, static_cast<jint>(session.sequenceNumber));
+        env->SetIntField(jSession, fid_sequenceNumber, static_cast<jint>(session.rstate.sendSequence));
 
         env->DeleteLocalRef(clazz);
         return jSession;
@@ -130,8 +130,10 @@ namespace gcrypt::jniOM::from
         jfieldID fid_session          = env->GetFieldID(clazz, "session", "L" JNI_messaging_session_CLASSNAME_MAPPING ";");
         jfieldID fid_handshakeMessage = env->GetFieldID(clazz, "handshakeMessage", "L" JNI_initial_message_handshake_CLASSNAME_MAPPING ";");
 
+        if (!result.session)
+            return nullptr;
         // Convert and set session object
-        jobject jSessionObj = from::messaging_session(JNI_CONTEXT, result.session);
+        jobject jSessionObj = from::messaging_session(JNI_CONTEXT, *result.session);
         env->SetObjectField(jResult, fid_session, jSessionObj);
         if (jSessionObj) env->DeleteLocalRef(jSessionObj);
 

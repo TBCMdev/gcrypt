@@ -118,7 +118,8 @@ namespace gcrypt::pqxdh
 
             auto outbound_session = std::make_shared<session::messaging_session>(recipientId, keys.identityKey, keys.signedPreKey, KDFSecretKey);
     #ifndef GCRYPT_NOSTORE
-            if (!GCRYPT_ISTORE->store_session(recipientId, outbound_session->to_bytes()))
+            auto bytes = outbound_session->to_bytes();
+            if (!GCRYPT_ISTORE->store_session(recipientId, bytes))
                 return std::nullopt;
             GCRYPT_ISTORE->store_cached_session(recipientId, outbound_session);
     #endif
